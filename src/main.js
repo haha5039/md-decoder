@@ -1,0 +1,686 @@
+import './style.css'
+import { allCards } from './cards_data.js'
+
+// State
+let candidates = [...allCards];
+let hints = []; // Array of { type: 'guess'|'direct', stat, isCorrect, value, cardName }
+let selectedCard = null;
+let calculatedResults = null;
+let activeCriteria = 'entropy';
+
+// DOM Elements
+const searchInput = document.getElementById('cardSearch');
+const searchDropdown = document.getElementById('searchDropdown');
+const selectedCardContainer = document.getElementById('selectedCardContainer');
+const selectedCardImg = document.getElementById('selectedCardImg');
+const infoName = document.getElementById('infoName');
+const infoDetails = document.getElementById('infoDetails');
+const statusToggles = document.querySelectorAll('.status-toggles .btn-toggle');
+const applyGuessBtn = document.getElementById('applyGuessBtn');
+
+const candidatesCount = document.getElementById('candidatesCount');
+const visibleCandidatesCount = document.getElementById('visibleCandidatesCount');
+const candidateList = document.getElementById('candidateList');
+const appliedHintsContainer = document.getElementById('appliedHintsContainer');
+const appliedHintsList = document.getElementById('appliedHintsList');
+const resetBtn = document.getElementById('resetBtn');
+const calcRecBtn = document.getElementById('calcRecBtn');
+const recContainer = document.getElementById('recContainer');
+const snipeList = document.getElementById('snipeList');
+const scoutList = document.getElementById('scoutList');
+
+const strategyMsg = document.getElementById('strategyMsg');
+const totalAttemptsLeft = document.getElementById('totalAttemptsLeft');
+const problemsLeft = document.getElementById('problemsLeft');
+const hintsLeft = document.getElementById('hintsLeft');
+const recCriteriaGroup = document.getElementById('recCriteriaGroup');
+const criteriaDesc = document.getElementById('criteriaDesc');
+
+// Direct Hint Elements
+const directAttribute = document.getElementById('directAttribute');
+const directFrame = document.getElementById('directFrame');
+const directLevel = document.getElementById('directLevel');
+const directRace = document.getElementById('directRace');
+const directAtk = document.getElementById('directAtk');
+const directDef = document.getElementById('directDef');
+const applyDirectHintBtn = document.getElementById('applyDirectHintBtn');
+
+// Special Rules Checkers
+function isFrameMatch(card, frameToMatch) {
+  if (!card.frameType || !frameToMatch) return false;
+  const t1 = card.frameType.toLowerCase();
+  const t2 = frameToMatch.toLowerCase();
+  
+  if (t1 === t2) return true;
+  
+  // Extra deck types match their pendulum variants
+  const extraDeckTypes = ['fusion', 'synchro', 'xyz', 'link', 'ritual'];
+  for (const ext of extraDeckTypes) {
+    if (t1 === ext && t2 === ext + '_pendulum') return true;
+    if (t2 === ext && t1 === ext + '_pendulum') return true;
+  }
+  
+  // Any pendulum matches any other pendulum
+  if (t1.includes('pendulum') && t2.includes('pendulum')) return true;
+  
+  // Direct hint "pendulum" matches any pendulum card
+  if (t2 === 'pendulum' && t1.includes('pendulum')) return true;
+  if (t1 === 'pendulum' && t2.includes('pendulum')) return true;
+  
+  return false;
+}
+
+function getValidLevels(card) {
+  const levels = [];
+  
+  if (card.level !== null && card.level !== undefined) {
+    levels.push(parseInt(card.level, 10));
+  } else if (card.frameType !== 'link') {
+    levels.push(0);
+  }
+  
+  if (card.id === 1686814) levels.push(12); // Tzolkin
+  if (card.id === 90884403) levels.push(12); // Bishbaalkin
+  if (card.id === 65301952 || card.id === 65305468) levels.push(1); // FNo.0 (all artworks)
+  if (card.id === 43490025) levels.push(1); // FNo.0 Slash
+  if (card.id === 26505081) levels.push(1); // FNo.0 Draco
+  if (card.id === 52653092) levels.push(1); // SNo.0
+  if (card.id === 52653092) levels.push(1); // Number F0 Zexal
+  
+  return [...new Set(levels)];
+}
+
+// Pre-calculate valid levels for all cards for maximum performance
+allCards.forEach(card => {
+  card.validLevels = getValidLevels(card);
+});
+
+function isLevelMatch(card, levelsToMatch) {
+  const cardLevels = card.validLevels || getValidLevels(card);
+  
+  if (!Array.isArray(levelsToMatch)) {
+    if (levelsToMatch === null || levelsToMatch === undefined || levelsToMatch === "") return false;
+    const target = parseInt(levelsToMatch, 10);
+    return cardLevels.includes(target);
+  }
+  
+  for (let i = 0; i < cardLevels.length; i++) {
+    if (levelsToMatch.includes(cardLevels[i])) return true;
+  }
+  
+  return false;
+}
+
+function getMatchProfile(guess, target) {
+  let profile = 0;
+  if (isFrameMatch(target, guess.frameType)) profile |= 1;
+  if (guess.attribute === target.attribute) profile |= 2;
+  if (isLevelMatch(target, guess.validLevels)) profile |= 4;
+  if (guess.race === target.race || (guess.race === null && target.race === null)) profile |= 8;
+  if (guess.atk === target.atk) profile |= 16;
+  if (guess.def === target.def) profile |= 32;
+  return profile;
+}
+
+function updateUI() {
+  candidatesCount.textContent = `${candidates.length}장 / ${allCards.length}장`;
+  visibleCandidatesCount.textContent = Math.min(candidates.length, 50);
+  renderCandidateList(candidates.slice(0, 50), candidateList);
+  
+  if (hints.length > 0) {
+    appliedHintsContainer.classList.remove('hidden');
+    renderHints();
+  } else {
+    appliedHintsContainer.classList.add('hidden');
+  }
+}
+
+function renderCandidateList(list, container) {
+  container.innerHTML = '';
+  list.forEach(card => {
+    const div = document.createElement('div');
+    div.className = 'card-item animate-fade-in';
+    const imgUrl = card.image_url || 'https://images.ygoprodeck.com/images/cards/80181649.jpg';
+    div.innerHTML = `
+      <img src="${imgUrl}" alt="${card.name}" loading="lazy">
+      <div class="card-item-title" title="${card.name}">${card.name}</div>
+    `;
+    div.onclick = () => selectCard(card);
+    container.appendChild(div);
+  });
+}
+
+function getStatNameKR(stat) {
+  const map = {
+    frameType: '카드 프레임', attribute: '속성', level: '레벨/랭크/링크',
+    race: '종족', atk: '공격력', def: '수비력'
+  };
+  return map[stat] || stat;
+}
+
+function renderHints() {
+  appliedHintsList.innerHTML = '';
+  hints.forEach((hint, index) => {
+    const li = document.createElement('li');
+    
+    if (hint.type === 'direct') {
+      li.innerHTML = `
+        <span>
+          <span class="stat-name">[확실한 힌트]</span> 
+          ${getStatNameKR(hint.stat)}: <span class="stat-val">${hint.value}</span>
+        </span>
+        <span class="stat-res res-correct">적용됨</span>
+      `;
+    } else {
+      const resClass = hint.isCorrect ? 'res-correct' : 'res-wrong';
+      const resText = hint.isCorrect ? 'O' : 'X';
+      li.innerHTML = `
+        <span>
+          <span class="stat-name">[${hint.cardName}]</span> 
+          ${getStatNameKR(hint.stat)}: <span class="stat-val">${Array.isArray(hint.value) ? hint.value.join('/') : (hint.value !== null ? hint.value : '?')}</span>
+        </span>
+        <span class="stat-res ${resClass}">${resText}</span>
+      `;
+    }
+    appliedHintsList.appendChild(li);
+  });
+}
+
+// ------------------------------------------------------------------
+// DIRECT HINT LOGIC
+// ------------------------------------------------------------------
+applyDirectHintBtn.addEventListener('click', () => {
+  const mapping = [
+    { stat: 'attribute', el: directAttribute },
+    { stat: 'frameType', el: directFrame },
+    { stat: 'level', el: directLevel },
+    { stat: 'race', el: directRace },
+    { stat: 'atk', el: directAtk },
+    { stat: 'def', el: directDef }
+  ];
+  
+  let added = false;
+  mapping.forEach(m => {
+    const val = m.el.value.trim();
+    if (val !== "") {
+      const exists = hints.some(h => h.type === 'direct' && h.stat === m.stat);
+      if (!exists) {
+        hints.push({
+          type: 'direct',
+          stat: m.stat,
+          isCorrect: true,
+          value: m.stat === 'level' || m.stat === 'atk' || m.stat === 'def' ? parseInt(val, 10) : val
+        });
+        added = true;
+      }
+      m.el.value = "";
+    }
+  });
+  
+  if (added) applyFilters();
+});
+
+// ------------------------------------------------------------------
+// SEARCH & SELECT (GUESS INPUT)
+// ------------------------------------------------------------------
+searchInput.addEventListener('input', (e) => {
+  const q = e.target.value.toLowerCase().trim();
+  if (q.length < 2) {
+    searchDropdown.classList.add('hidden');
+    return;
+  }
+  
+  // Search in both Korean (name) and English (nameEn)
+  const results = allCards.filter(c => 
+    (c.name && c.name.toLowerCase().includes(q)) || 
+    (c.nameEn && c.nameEn.toLowerCase().includes(q))
+  ).slice(0, 20);
+  
+  if (results.length > 0) {
+    searchDropdown.innerHTML = '';
+    results.forEach(card => {
+      const div = document.createElement('div');
+      div.className = 'dropdown-item';
+      div.innerHTML = `
+        <img src="${card.image_url || ''}" alt="">
+        <span>${card.name} <span style="font-size: 0.75rem; color: #888;">(${card.nameEn})</span></span>
+      `;
+      div.onclick = () => {
+        selectCard(card);
+        searchDropdown.classList.add('hidden');
+        searchInput.value = '';
+      };
+      searchDropdown.appendChild(div);
+    });
+    searchDropdown.classList.remove('hidden');
+  } else {
+    searchDropdown.classList.add('hidden');
+  }
+});
+
+document.addEventListener('click', (e) => {
+  if (!searchDropdown.contains(e.target) && e.target !== searchInput) {
+    searchDropdown.classList.add('hidden');
+  }
+});
+
+function selectCard(card) {
+  selectedCard = card;
+  selectedCardContainer.classList.remove('hidden');
+  selectedCardImg.src = card.image_url || '';
+  infoName.textContent = card.name;
+  
+  const levelText = card.level !== null ? `Lv/Rk/Lk: ${card.level}` : '';
+  const atkDefText = (card.atk !== null ? `ATK: ${card.atk}` : '') + (card.def !== null ? ` / DEF: ${card.def}` : '');
+  infoDetails.innerHTML = `${card.frameType || ''} | ${card.attribute || ''} | ${card.race || ''}<br>${levelText}<br>${atkDefText}`;
+  
+  statusToggles.forEach(btn => {
+    btn.classList.remove('active');
+    btn.dataset.selected = "false";
+  });
+}
+
+statusToggles.forEach(btn => {
+  btn.addEventListener('click', (e) => {
+    const parent = btn.parentElement;
+    parent.querySelectorAll('.btn-toggle').forEach(b => {
+      b.classList.remove('active');
+      b.dataset.selected = "false";
+    });
+    btn.classList.add('active');
+    btn.dataset.selected = "true";
+  });
+});
+
+applyGuessBtn.addEventListener('click', () => {
+  if (!selectedCard) return;
+  
+  const newHints = [];
+  const rows = document.querySelectorAll('.status-row');
+  
+  rows.forEach(row => {
+    const stat = row.dataset.stat;
+    const activeBtn = row.querySelector('.btn-toggle.active');
+    
+    if (activeBtn) {
+      const isCorrect = activeBtn.dataset.val === 'correct';
+      let value = selectedCard[stat];
+      if (stat === 'level') value = selectedCard.validLevels || getValidLevels(selectedCard);
+      
+      newHints.push({
+        type: 'guess',
+        stat,
+        isCorrect,
+        value,
+        cardName: selectedCard.name
+      });
+    }
+  });
+  
+  if (newHints.length === 0) {
+    alert("최소 1개 이상의 판정 결과를 선택해주세요.");
+    return;
+  }
+  
+  hints = [...hints, ...newHints];
+  applyFilters();
+  
+  selectedCardContainer.classList.add('hidden');
+  selectedCard = null;
+});
+
+// ------------------------------------------------------------------
+// FILTERING
+// ------------------------------------------------------------------
+function applyFilters() {
+  candidates = allCards.filter(card => {
+    for (let hint of hints) {
+      let isMatch = false;
+      
+      if (hint.stat === 'frameType') {
+        isMatch = isFrameMatch(card, hint.value);
+      } else if (hint.stat === 'level') {
+        isMatch = isLevelMatch(card, hint.value);
+      } else {
+        isMatch = (card[hint.stat] === hint.value);
+      }
+      
+      if (hint.isCorrect && !isMatch) return false;
+      if (!hint.isCorrect && isMatch) return false;
+    }
+    return true;
+  });
+  
+  calculatedResults = null;
+  updateUI();
+  recContainer.classList.add('hidden');
+  snipeList.innerHTML = '';
+  scoutList.innerHTML = '';
+  strategyMsg.innerHTML = `<span class="badge" style="background:var(--accent-blue)">최적의 카드를 계산해주세요</span>`;
+}
+
+resetBtn.addEventListener('click', () => {
+  hints = [];
+  candidates = [...allCards];
+  calculatedResults = null;
+  recContainer.classList.add('hidden');
+  snipeList.innerHTML = '';
+  scoutList.innerHTML = '';
+  updateUI();
+  strategyMsg.innerHTML = `<span class="badge" style="background:var(--accent-blue)">최적의 카드를 계산해주세요</span>`;
+});
+
+// ------------------------------------------------------------------
+// RECOMMENDATION SOLVER
+// ------------------------------------------------------------------
+// ------------------------------------------------------------------
+// CRITERIA SELECTION LOGIC
+// ------------------------------------------------------------------
+const criteriaDescriptions = {
+  entropy: `<strong>기대 정보량 (Entropy):</strong> 전체 후보군을 가장 고르게 여러 판정 그룹으로 나누는 표준 알고리즘입니다. 평균적인 탐색 속도가 가장 빠르며 무난하게 좋은 카드들을 골라줍니다.`,
+  minimax: `<strong>최악 상황 최소화 (Minimax):</strong> 만약 운이 없더라도, 남는 후보의 최대 개수를 가장 작게 억제하는 극도의 안정적 정찰 기법입니다. 소거법으로 실패 확률을 원천 봉쇄할 때 적합합니다.`,
+  oneShot: `<strong>단판 확정 확률 (One-shot):</strong> 다음 1회 도전 결과로 남는 후보를 정확히 1장 이하로 압축해 내거나 정답을 바로 찾을 확률을 극대화합니다. 기회가 얼마 없어 확률에 도박을 걸어야 할 때 최고의 픽입니다.`,
+  expected: `<strong>평균 잔여 최소 (Average):</strong> 섀넌 엔트로피와 유사하지만, 다음 도전 결과 이후에 최종적으로 남게 될 카드 수의 '수학적 기댓값' 자체를 직접적으로 최소화하는 직관적인 탐색 방식입니다.`
+};
+
+function updateCriteriaUI(criteria) {
+  activeCriteria = criteria;
+  
+  // Update button active state
+  recCriteriaGroup.querySelectorAll('.btn-toggle').forEach(btn => {
+    if (btn.dataset.criteria === criteria) {
+      btn.classList.add('active');
+    } else {
+      btn.classList.remove('active');
+    }
+  });
+  
+  // Update description
+  if (criteriaDesc) {
+    criteriaDesc.innerHTML = criteriaDescriptions[criteria];
+    
+    // Change border color to match the style
+    const colors = {
+      entropy: 'var(--accent-blue)',
+      minimax: '#ef4444',
+      oneShot: '#22c55e',
+      expected: '#3b82f6'
+    };
+    criteriaDesc.style.borderLeftColor = colors[criteria] || 'var(--accent-blue)';
+  }
+  
+  // Render recommendations with the new sorting
+  if (calculatedResults) {
+    renderRecommendations();
+  }
+  
+  // Update strategy message to keep guidance in sync
+  updateHintStrategy();
+}
+
+function sortRecommendations(list, criteria) {
+  if (criteria === 'entropy') {
+    return [...list].sort((a, b) => b.entropy - a.entropy);
+  } else if (criteria === 'minimax') {
+    return [...list].sort((a, b) => {
+      if (a.minimax !== b.minimax) return a.minimax - b.minimax;
+      return b.entropy - a.entropy; // Tie break with entropy
+    });
+  } else if (criteria === 'oneShot') {
+    return [...list].sort((a, b) => {
+      if (b.oneShotProb !== a.oneShotProb) return b.oneShotProb - a.oneShotProb;
+      return b.entropy - a.entropy; // Tie break with entropy
+    });
+  } else if (criteria === 'expected') {
+    return [...list].sort((a, b) => {
+      if (a.expectedRemaining !== b.expectedRemaining) return a.expectedRemaining - b.expectedRemaining;
+      return b.entropy - a.entropy; // Tie break with entropy
+    });
+  }
+  return list;
+}
+
+function renderRecommendationList(list, container) {
+  container.innerHTML = '';
+  list.forEach(item => {
+    const card = item.card;
+    const div = document.createElement('div');
+    div.className = 'card-item animate-fade-in';
+    const imgUrl = card.image_url || 'https://images.ygoprodeck.com/images/cards/80181649.jpg';
+    
+    const entropyText = `정보량: ${item.entropy.toFixed(2)} Bits`;
+    const expectedText = `평균 잔여: ${item.expectedRemaining.toFixed(1)}장`;
+    const minimaxText = `최악의 경우: ${item.minimax}장`;
+    const oneShotText = `단판 종결: ${(item.oneShotProb * 100).toFixed(1)}%`;
+    
+    let detailHtml = '';
+    if (activeCriteria === 'entropy') {
+      detailHtml = `<div class="card-item-info" style="font-weight:bold; color:var(--accent-gold);">${entropyText}</div>
+                    <div style="font-size:0.7rem; color:var(--text-muted);">${expectedText} | ${minimaxText}</div>`;
+    } else if (activeCriteria === 'minimax') {
+      detailHtml = `<div class="card-item-info" style="font-weight:bold; color:#f87171;">${minimaxText}</div>
+                    <div style="font-size:0.7rem; color:var(--text-muted);">${entropyText} | ${oneShotText}</div>`;
+    } else if (activeCriteria === 'oneShot') {
+      detailHtml = `<div class="card-item-info" style="font-weight:bold; color:#4ade80;">${oneShotText}</div>
+                    <div style="font-size:0.7rem; color:var(--text-muted);">${entropyText} | ${expectedText}</div>`;
+    } else if (activeCriteria === 'expected') {
+      detailHtml = `<div class="card-item-info" style="font-weight:bold; color:#60a5fa;">${expectedText}</div>
+                    <div style="font-size:0.7rem; color:var(--text-muted);">${entropyText} | ${minimaxText}</div>`;
+    }
+    
+    div.innerHTML = `
+      <img src="${imgUrl}" alt="${card.name}" loading="lazy">
+      <div class="card-item-title" title="${card.name}">${card.name}</div>
+      ${detailHtml}
+    `;
+    div.onclick = () => selectCard(card);
+    container.appendChild(div);
+  });
+}
+
+function renderRecommendations() {
+  if (!calculatedResults) return;
+  
+  const sortedSnipes = sortRecommendations(calculatedResults.snipes, activeCriteria).slice(0, 5);
+  const sortedScouts = sortRecommendations(calculatedResults.scouts, activeCriteria).slice(0, 5);
+  
+  renderRecommendationList(sortedSnipes, snipeList);
+  renderRecommendationList(sortedScouts, scoutList);
+}
+
+recCriteriaGroup.addEventListener('click', (e) => {
+  const btn = e.target.closest('.btn-toggle');
+  if (btn) {
+    updateCriteriaUI(btn.dataset.criteria);
+  }
+});
+
+// ------------------------------------------------------------------
+// RECOMMENDATION SOLVER
+// ------------------------------------------------------------------
+calcRecBtn.addEventListener('click', () => {
+  if (candidates.length <= 1) {
+    if (candidates.length === 1) {
+      updateHintStrategy();
+    } else {
+      alert("조건에 맞는 카드가 없습니다.");
+    }
+    return;
+  }
+  
+  calcRecBtn.textContent = "계산 중...";
+  calcRecBtn.disabled = true;
+  
+  setTimeout(() => {
+    calculatedResults = calculateBestGuesses();
+    
+    recContainer.classList.remove('hidden');
+    renderRecommendations();
+    
+    calcRecBtn.textContent = "최적의 카드 계산";
+    calcRecBtn.disabled = false;
+    
+    updateHintStrategy();
+  }, 50);
+});
+
+function calculateBestGuesses() {
+  const snipes = [];
+  const scouts = [];
+  const total = candidates.length;
+  
+  if (total === 0) return { snipes, scouts };
+
+  // Optimization: If there are too many candidates, uniformly sample them 
+  // to calculate entropy extremely fast while maintaining statistical accuracy.
+  let targetPool = candidates;
+  if (total > 800) {
+    const step = Math.floor(total / 800) || 1;
+    targetPool = candidates.filter((_, i) => i % step === 0).slice(0, 800);
+  }
+  const sampleSize = targetPool.length;
+  const ratio = total / sampleSize;
+  const ratioForSquares = total / (sampleSize * sampleSize);
+  
+  // We scan ALL 13600+ cards to find the best scouts, regardless of candidate count
+  for (let i = 0; i < allCards.length; i++) {
+    const guess = allCards[i];
+    const buckets = new Int32Array(64);
+    
+    // Evaluate against the sample pool
+    for (let j = 0; j < sampleSize; j++) {
+      const target = targetPool[j];
+      const profile = getMatchProfile(guess, target);
+      buckets[profile]++;
+    }
+    
+    let sumOfSquares = 0;
+    let entropy = 0;
+    let maxBucket = 0;
+    let sizeOneBuckets = 0;
+    
+    for (let k = 0; k < 64; k++) {
+      const count = buckets[k];
+      if (count > 0) {
+        sumOfSquares += count * count;
+        const p = count / sampleSize;
+        entropy -= p * Math.log2(p);
+        if (count > maxBucket) {
+          maxBucket = count;
+        }
+        if (count === 1) {
+          sizeOneBuckets++;
+        }
+      }
+    }
+    
+    // Extrapolate the expected values to the true population size
+    const expectedRemaining = sumOfSquares * ratioForSquares;
+    const minimax = Math.round(maxBucket * ratio);
+    // oneShotProb is only accurate/useful when candidates are very few (no sampling).
+    const oneShotProb = sampleSize === total ? (sizeOneBuckets / total) : 0;
+    
+    const scoreObj = { 
+      card: guess, 
+      entropy, 
+      expectedRemaining, 
+      minimax, 
+      oneShotProb 
+    };
+    
+    const isCandidate = candidates.includes(guess);
+    if (isCandidate) {
+      snipes.push(scoreObj);
+    } else {
+      scouts.push(scoreObj);
+    }
+  }
+  
+  return { snipes, scouts };
+}
+
+function updateHintStrategy() {
+  const attempts = parseInt(totalAttemptsLeft.value, 10) || 0;
+  const problems = parseInt(problemsLeft.value, 10) || 1;
+  const hLeft = parseInt(hintsLeft.value, 10) || 0;
+  const attemptsPerProblem = attempts / problems;
+  const total = candidates.length;
+  
+  if (total === 1) {
+    strategyMsg.innerHTML = `
+      <div style="background: rgba(34,197,94,0.15); border: 1px solid #22c55e; padding: 0.75rem; border-radius: 8px; margin-bottom: 0.5rem;">
+        <span class="badge" style="background:#22c55e; margin-bottom: 0.5rem; display: inline-block;">🎯 정답 확정</span>
+        <p style="font-size: 0.85rem; color: #4ade80;">후보가 1개만 남았습니다! 즉시 인게임에서 <strong>[${candidates[0].name}]</strong> 카드로 도전하세요.</p>
+      </div>
+    `;
+    return;
+  }
+  
+  if (attempts === 0) {
+    strategyMsg.innerHTML = `
+      <div style="background: rgba(239,68,68,0.15); border: 1px solid #ef4444; padding: 0.75rem; border-radius: 8px; margin-bottom: 0.5rem;">
+        <span class="badge" style="background:#ef4444; margin-bottom: 0.5rem; display: inline-block;">❌ 도전 불가</span>
+        <p style="font-size: 0.85rem; color: #f87171;">남은 도전 횟수가 0회입니다. 다음 일일 미션이나 이벤트 추가 횟수를 획득하십시오.</p>
+      </div>
+    `;
+    return;
+  }
+  
+  let badgeHtml = '';
+  let adviceHtml = '';
+  let recommendedLogic = 'entropy';
+  
+  if (attemptsPerProblem < 1.1) {
+    if (hLeft > 0) {
+      badgeHtml = `<span class="badge" style="background:#f59e0b; color:#000; margin-bottom: 0.5rem; display: inline-block;">⚠️ 힌트 사용 필수</span>`;
+      adviceHtml = `문제당 평균 도전 기회가 1회 이하입니다. 빗나갈 시 즉시 실패하므로, 남은 힌트(${hLeft}개)를 우선적으로 사용하여 후보를 확실하게 좁히는 것이 안전합니다.`;
+    } else {
+      badgeHtml = `<span class="badge" style="background:#ef4444; margin-bottom: 0.5rem; display: inline-block;">🚨 극단적 저격 상황</span>`;
+      adviceHtml = `남은 힌트가 없습니다! 이번에 무조건 맞춰야 합니다. 후보군 중에서 <strong>[단판 확정 확률]</strong>이 가장 높은 카드로 스나이핑을 시도해야 생존율이 가장 높습니다.`;
+      recommendedLogic = 'oneShot';
+    }
+  } else if (attemptsPerProblem < 1.8) {
+    if (hLeft > 0 && total > 5) {
+      badgeHtml = `<span class="badge" style="background:#f59e0b; color:#000; margin-bottom: 0.5rem; display: inline-block;">⚠️ 힌트 사용 권장</span>`;
+      adviceHtml = `도전 기회가 다소 촉박합니다. 후보가 ${total}장 남아 한 번에 맞추기 어렵다면 확실한 힌트를 하나 더 개방하는 것이 좋습니다.`;
+    } else {
+      badgeHtml = `<span class="badge" style="background:#3b82f6; margin-bottom: 0.5rem; display: inline-block;">🟢 정답 스나이핑 권장</span>`;
+      adviceHtml = `후보가 많지 않습니다. 후보 내에서 최고의 분별력을 가진 카드로 정답 도전을 해보세요. <strong>[최악 상황 최소화(Minimax)]</strong> 또는 <strong>[평균 잔여 최소]</strong>를 사용하면 틀려도 다음 턴에 정답을 쉽게 좁힐 수 있습니다.`;
+      recommendedLogic = 'minimax';
+    }
+  } else {
+    badgeHtml = `<span class="badge" style="background:#3b82f6; margin-bottom: 0.5rem; display: inline-block;">🕵️ 정찰 및 탐색 기회 충분</span>`;
+    if (total > 15) {
+      adviceHtml = `남은 도전 기회가 넉넉합니다(${attempts}회). 전체 카드 데이터베이스에서 <strong>[기대 정보량(Entropy)]</strong>이 가장 큰 <strong>'극한의 정찰 픽'</strong>을 하나 제출하면, 남은 후보(${total}장)를 가장 빠르고 균등하게 폭파하듯 제거할 수 있습니다.`;
+      recommendedLogic = 'entropy';
+    } else {
+      adviceHtml = `후보군이 ${total}장으로 좁혀졌으며 도전 기회가 충분합니다. <strong>[평균 잔여 최소]</strong> 기준으로 후보 중 가장 안전한 카드를 스나이핑하여 정답과 정찰을 동시에 노리는 하이브리드 플레이가 좋습니다.`;
+      recommendedLogic = 'expected';
+    }
+  }
+  
+  const criteriaNames = {
+    entropy: '기대 정보량 (Entropy)',
+    minimax: '최악 상황 최소화 (Minimax)',
+    oneShot: '단판 확정 확률 (One-shot)',
+    expected: '평균 잔여 최소 (Average)'
+  };
+  
+  strategyMsg.innerHTML = `
+    <div style="background: rgba(255,255,255,0.05); border: 1px solid var(--panel-border); padding: 0.75rem; border-radius: 8px; font-size: 0.85rem; line-height: 1.4;">
+      ${badgeHtml}
+      <p style="margin-bottom: 0.5rem; color: var(--text-main);">${adviceHtml}</p>
+      <div style="margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px dashed rgba(255,255,255,0.1); font-size: 0.8rem; color: var(--accent-gold);">
+        💡 추천 검색 기준: <strong>${criteriaNames[recommendedLogic]}</strong> (클릭하여 기준 변경 가능)
+      </div>
+    </div>
+  `;
+}
+
+// Add state input change listeners
+totalAttemptsLeft.addEventListener('input', updateHintStrategy);
+problemsLeft.addEventListener('input', updateHintStrategy);
+hintsLeft.addEventListener('input', updateHintStrategy);
+
+// Init
+updateUI();
