@@ -325,12 +325,12 @@ function renderCandidates() {
       <img src="${imgUrl}" alt="${card.name}" loading="lazy" onerror="this.src='${card.image_url}'">
       <div class="candidate-name">${card.name}</div>
       <div class="candidate-stats">
-        <div><span>종류:</span> <span>${getStatDisplay(translateFrame(card.frameType))}</span></div>
-        <div><span>Lv:</span> <span>${getStatDisplay(card.level)}</span></div>
+        <div><span>카드 프레임:</span> <span>${getStatDisplay(translateFrame(card.frameType))}</span></div>
         <div><span>속성:</span> <span>${getStatDisplay(translateAttribute(card.attribute))}</span></div>
+        <div><span>레벨 / 랭크 / 링크:</span> <span>${getStatDisplay(card.level)}</span></div>
         <div><span>종족:</span> <span>${getStatDisplay(translateRace(card.race))}</span></div>
-        <div><span>ATK:</span> <span>${getStatDisplay(card.atk)}</span></div>
-        <div><span>DEF:</span> <span>${getStatDisplay(card.def)}</span></div>
+        <div><span>공격력:</span> <span>${getStatDisplay(card.atk)}</span></div>
+        <div><span>수비력:</span> <span>${getStatDisplay(card.def)}</span></div>
       </div>
     `;
     
