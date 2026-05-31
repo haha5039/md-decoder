@@ -351,7 +351,7 @@ function getHintText(key, card) {
   } else if (key === 'level') {
     return `레벨/랭크/링크: ${val}`;
   } else if (key === 'race') {
-    return `종족/분류: ${translateRace(val)}`;
+    return `종족: ${translateRace(val)}`;
   } else if (key === 'atk') {
     return `공격력: ${val === null || val === undefined ? '-' : val}`;
   } else if (key === 'def') {
