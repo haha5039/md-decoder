@@ -2,10 +2,12 @@ import './style.css'
 import { allCards as rawCards } from './cards_data.js'
 import { isFrameMatch, isLevelMatch, getValidLevels, renderCardStatsHTML, translateAttribute, translateFrame, translateRace } from './utils.js'
 
-const allCards = rawCards.filter(c => c.frameType !== 'spell' && c.frameType !== 'trap');
+import { getCachedCards, saveCachedCards } from './db.js'
+
+let allCards = [];
 
 // State
-let candidates = [...allCards];
+let candidates = [];
 let hints = []; // Array of { type: 'guess'|'direct', stat, isCorrect, value, cardName }
 let selectedCard = null;
 let calculatedResults = null;
@@ -49,10 +51,39 @@ const directDef = document.getElementById('directDef');
 const directDefNone = document.getElementById('directDefNone');
 const applyDirectHintBtn = document.getElementById('applyDirectHintBtn');
 
-// Pre-calculate valid levels for all cards for maximum performance
-allCards.forEach(card => {
-  card.validLevels = getValidLevels(card);
-});
+// Database Sync Elements
+const dbStatusText = document.getElementById('dbStatusText');
+const updateDbBtn = document.getElementById('updateDbBtn');
+const updateProgressContainer = document.getElementById('updateProgressContainer');
+const updateProgressBar = document.getElementById('updateProgressBar');
+const updateProgressText = document.getElementById('updateProgressText');
+
+async function initGameData() {
+  try {
+    const cached = await getCachedCards();
+    if (cached && cached.length > 0) {
+      allCards = cached.filter(c => c.frameType !== 'spell' && c.frameType !== 'trap');
+      if (dbStatusText) dbStatusText.textContent = '현재: 사용자 업데이트 데이터 사용 중';
+      console.log(`Loaded ${allCards.length} cards from IndexedDB.`);
+    } else {
+      allCards = rawCards.filter(c => c.frameType !== 'spell' && c.frameType !== 'trap');
+      if (dbStatusText) dbStatusText.textContent = '현재: 내장 데이터 사용 중';
+      console.log(`Loaded ${allCards.length} cards from static cards_data.js.`);
+    }
+  } catch (err) {
+    console.error("Failed to load IndexedDB cache, fallback to static:", err);
+    allCards = rawCards.filter(c => c.frameType !== 'spell' && c.frameType !== 'trap');
+    if (dbStatusText) dbStatusText.textContent = '현재: 내장 데이터 사용 중 (오류)';
+  }
+
+  // Pre-calculate valid levels for all cards for maximum performance
+  allCards.forEach(card => {
+    card.validLevels = getValidLevels(card);
+  });
+
+  candidates = [...allCards];
+  updateUI();
+}
 
 function getMatchProfile(guess, target) {
   let profile = 0;
@@ -692,5 +723,88 @@ totalAttemptsLeft.addEventListener('input', updateHintStrategy);
 problemsLeft.addEventListener('input', updateHintStrategy);
 hintsLeft.addEventListener('input', updateHintStrategy);
 
+if (updateDbBtn) {
+  updateDbBtn.addEventListener('click', async () => {
+    updateDbBtn.disabled = true;
+    updateProgressContainer.style.display = 'block';
+    
+    const setProgress = (percent, text) => {
+      updateProgressBar.style.width = `${percent}%`;
+      updateProgressText.textContent = `${percent}% - ${text}`;
+    };
+    
+    try {
+      setProgress(10, '영어 카드 데이터 요청 중...');
+      const enRes = await fetch('https://db.ygoprodeck.com/api/v7/cardinfo.php?format=Master%20Duel').then(r => r.json());
+      
+      setProgress(40, '한국어 카드 데이터 요청 중...');
+      const koRes = await fetch('https://db.ygoprodeck.com/api/v7/cardinfo.php?format=Master%20Duel&language=ko').then(r => r.json());
+      
+      setProgress(70, '데이터 병합 및 매핑 중...');
+      const enCards = enRes.data || [];
+      const koCards = koRes.data || [];
+      
+      const koMap = new Map();
+      koCards.forEach(c => koMap.set(c.id, c));
+      
+      const uniqueNames = new Set();
+      const finalCards = [];
+      
+      for (const en of enCards) {
+        if (en.type === 'Token' || en.type === 'Skill Card') continue;
+        if (uniqueNames.has(en.name)) continue;
+        uniqueNames.add(en.name);
+        
+        const ko = koMap.get(en.id);
+        let koName = ko ? ko.name : en.name;
+        
+        // Simple helper for frame type mapping
+        let frameType = en.frameType;
+        const type = en.type.toLowerCase();
+        if (type.includes('spell')) frameType = 'spell';
+        else if (type.includes('trap')) frameType = 'trap';
+        else if (type.includes('fusion')) frameType = 'fusion';
+        else if (type.includes('synchro')) frameType = 'synchro';
+        else if (type.includes('xyz')) frameType = 'xyz';
+        else if (type.includes('link')) frameType = 'link';
+        else if (type.includes('ritual')) frameType = 'ritual';
+        else if (type.includes('pendulum')) frameType = 'pendulum';
+        else if (type.includes('effect')) frameType = 'effect';
+        else if (type.includes('normal')) frameType = 'normal';
+        
+        finalCards.push({
+          id: en.id,
+          name: koName,
+          nameEn: en.name,
+          frameType: frameType,
+          attribute: en.attribute || null,
+          level: en.level || en.rank || en.linkval || null,
+          race: en.race,
+          type: en.type,
+          atk: en.atk !== undefined ? en.atk : null,
+          def: en.def !== undefined ? en.def : null,
+          image_url: en.card_images && en.card_images[0] ? en.card_images[0].image_url_cropped : null
+        });
+      }
+      
+      setProgress(90, 'IndexedDB 캐시에 저장 중...');
+      await saveCachedCards(finalCards);
+      
+      setProgress(100, '완료! 페이지를 새로고침합니다.');
+      setTimeout(() => {
+        window.location.reload();
+      }, 1000);
+      
+    } catch (err) {
+      console.error(err);
+      setProgress(0, '오류 발생: 데이터 로드 실패');
+      updateDbBtn.disabled = false;
+      setTimeout(() => {
+        updateProgressContainer.style.display = 'none';
+      }, 3000);
+    }
+  });
+}
+
 // Init
-updateUI();
+initGameData();
