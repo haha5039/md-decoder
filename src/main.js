@@ -46,6 +46,7 @@ const directLevel = document.getElementById('directLevel');
 const directRace = document.getElementById('directRace');
 const directAtk = document.getElementById('directAtk');
 const directDef = document.getElementById('directDef');
+const directDefNone = document.getElementById('directDefNone');
 const applyDirectHintBtn = document.getElementById('applyDirectHintBtn');
 
 // Pre-calculate valid levels for all cards for maximum performance
@@ -101,6 +102,7 @@ function getStatNameKR(stat) {
 }
 
 function getTranslatedValue(stat, value) {
+  if (stat === 'def' && value === null) return '없음';
   if (value === null || value === undefined) return '?';
   if (Array.isArray(value)) {
     return value.map(val => {
@@ -158,7 +160,26 @@ applyDirectHintBtn.addEventListener('click', () => {
   ];
   
   let added = false;
+  const isDefNone = directDefNone ? directDefNone.checked : false;
+  
   mapping.forEach(m => {
+    if (m.stat === 'def' && isDefNone) {
+      const exists = hints.some(h => h.type === 'direct' && h.stat === 'def');
+      if (!exists) {
+        hints.push({
+          type: 'direct',
+          stat: 'def',
+          isCorrect: true,
+          value: null
+        });
+        added = true;
+      }
+      m.el.value = "";
+      directDefNone.checked = false;
+      m.el.disabled = false;
+      return;
+    }
+    
     const val = m.el.value.trim();
     if (val !== "") {
       const exists = hints.some(h => h.type === 'direct' && h.stat === m.stat);
@@ -177,6 +198,17 @@ applyDirectHintBtn.addEventListener('click', () => {
   
   if (added) applyFilters();
 });
+
+if (directDefNone) {
+  directDefNone.addEventListener('change', (e) => {
+    if (e.target.checked) {
+      directDef.value = "";
+      directDef.disabled = true;
+    } else {
+      directDef.disabled = false;
+    }
+  });
+}
 
 // ------------------------------------------------------------------
 // SEARCH & SELECT (GUESS INPUT)
@@ -337,6 +369,13 @@ resetBtn.addEventListener('click', () => {
   recContainer.classList.add('hidden');
   snipeList.innerHTML = '';
   scoutList.innerHTML = '';
+  if (directDefNone) {
+    directDefNone.checked = false;
+  }
+  if (directDef) {
+    directDef.disabled = false;
+    directDef.value = "";
+  }
   updateUI();
   strategyMsg.innerHTML = `<span class="badge" style="background:var(--accent-blue)">최적의 카드를 계산해주세요</span>`;
 });
