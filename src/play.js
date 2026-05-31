@@ -86,7 +86,7 @@ function initGame() {
   updateHintUI();
   
   // Reveal exactly 1 random hint at the start
-  revealRandomHint();
+  revealRandomHint(true);
   
   // Update Candidates
   updateCandidates();
@@ -120,15 +120,28 @@ okConfirmBtn.addEventListener('click', () => {
   pendingGuessCard = null;
 });
 
-function revealRandomHint() {
+function revealRandomHint(isInitial = false) {
   const unrevealed = statKeys.filter(k => !revealedHints[k]);
   if (unrevealed.length === 0) return;
   
   const randomKey = unrevealed[Math.floor(Math.random() * unrevealed.length)];
   revealedHints[randomKey] = true;
   systemRevealedKeys.push(randomKey);
+  
+  // Push virtual hint row to history
+  const hintRow = {
+    isHint: true,
+    hintType: isInitial ? '최초 힌트' : '무작위 힌트',
+    key: randomKey,
+    card: {
+      name: isInitial ? '💡 최초 힌트 제공' : '💡 무작위 힌트 개방'
+    }
+  };
+  history.unshift(hintRow);
+  
   updateHintUI();
   updateCandidates();
+  renderHistory();
 }
 
 getHintBtn.addEventListener('click', () => {
@@ -136,7 +149,7 @@ getHintBtn.addEventListener('click', () => {
   if (unrevealed.length > 0) {
     hintUseCount++;
     hintUseCountEl.textContent = hintUseCount;
-    revealRandomHint();
+    revealRandomHint(false);
   }
 });
 
@@ -366,8 +379,14 @@ function renderHistory() {
     const imgTd = document.createElement('td');
     imgTd.style.padding = '0.5rem';
     imgTd.style.borderBottom = '1px solid var(--accent-blue)';
-    const imgUrl = row.card.image_url ? row.card.image_url.replace('.jpg', '_small.jpg') : '';
-    imgTd.innerHTML = `<img src="${imgUrl}" alt="card" style="width: 40px; border-radius: 3px;" loading="lazy" onerror="this.src='${row.card.image_url}'">`;
+    imgTd.style.textAlign = 'center';
+    
+    if (row.isHint) {
+      imgTd.innerHTML = `<span style="font-size: 1.2rem;">💡</span>`;
+    } else {
+      const imgUrl = row.card.image_url ? row.card.image_url.replace('.jpg', '_small.jpg') : '';
+      imgTd.innerHTML = `<img src="${imgUrl}" alt="card" style="width: 40px; border-radius: 3px;" loading="lazy" onerror="this.src='${row.card.image_url}'">`;
+    }
     tr.appendChild(imgTd);
     
     // Name cell
@@ -375,19 +394,13 @@ function renderHistory() {
     nameTd.textContent = row.card.name;
     nameTd.style.padding = '0.75rem';
     nameTd.style.borderBottom = '1px solid var(--accent-blue)';
+    if (row.isHint) {
+      nameTd.style.fontWeight = 'bold';
+      nameTd.style.color = 'var(--accent-gold)';
+    }
     tr.appendChild(nameTd);
     
-    // Revealed Hints cell
-    const hintTd = document.createElement('td');
-    hintTd.style.padding = '0.75rem';
-    hintTd.style.borderBottom = '1px solid var(--accent-blue)';
-    hintTd.style.fontSize = '0.75rem';
-    hintTd.style.color = 'var(--accent-gold)';
-    const hintsList = row.systemHints.map(key => getHintText(key, targetCard));
-    hintTd.innerHTML = hintsList.length > 0 ? hintsList.join('<br>') : '-';
-    tr.appendChild(hintTd);
-    
-    // Cell helper
+    // Cell helper for normal guess cells
     const makeCell = (value, isMatch) => {
       const td = document.createElement('td');
       td.textContent = getStatDisplay(value);
@@ -399,12 +412,38 @@ function renderHistory() {
       return td;
     };
     
-    tr.appendChild(makeCell(translateFrame(row.card.frameType), row.frame));
-    tr.appendChild(makeCell(translateAttribute(row.card.attribute), row.attribute));
-    tr.appendChild(makeCell(row.card.level, row.level));
-    tr.appendChild(makeCell(translateRace(row.card.race), row.race));
-    tr.appendChild(makeCell(row.card.atk, row.atk));
-    tr.appendChild(makeCell(row.card.def, row.def));
+    // Cell helper for hint cells
+    const makeHintCell = (value, isRevealedStat) => {
+      const td = document.createElement('td');
+      td.textContent = isRevealedStat ? getStatDisplay(value) : '-';
+      td.style.padding = '0.75rem';
+      td.style.borderBottom = '1px solid var(--accent-blue)';
+      if (isRevealedStat) {
+        td.style.backgroundColor = 'rgba(46, 204, 113, 0.2)';
+        td.style.color = '#2ecc71';
+        td.style.fontWeight = 'bold';
+      } else {
+        td.style.color = 'var(--text-muted)';
+        td.style.opacity = '0.5';
+      }
+      return td;
+    };
+    
+    if (row.isHint) {
+      tr.appendChild(makeHintCell(translateFrame(targetCard.frameType), row.key === 'frameType'));
+      tr.appendChild(makeHintCell(translateAttribute(targetCard.attribute), row.key === 'attribute'));
+      tr.appendChild(makeHintCell(targetCard.level, row.key === 'level'));
+      tr.appendChild(makeHintCell(translateRace(targetCard.race), row.key === 'race'));
+      tr.appendChild(makeHintCell(targetCard.atk, row.key === 'atk'));
+      tr.appendChild(makeHintCell(targetCard.def, row.key === 'def'));
+    } else {
+      tr.appendChild(makeCell(translateFrame(row.card.frameType), row.frame));
+      tr.appendChild(makeCell(translateAttribute(row.card.attribute), row.attribute));
+      tr.appendChild(makeCell(row.card.level, row.level));
+      tr.appendChild(makeCell(translateRace(row.card.race), row.race));
+      tr.appendChild(makeCell(row.card.atk, row.atk));
+      tr.appendChild(makeCell(row.card.def, row.def));
+    }
     
     historyTbody.appendChild(tr);
   });
@@ -415,7 +454,7 @@ function showVictory(guessCard) {
   
   victoryMsg.innerHTML = `
     총 시도 횟수: <strong style="color:var(--accent-gold); font-size:1.4rem;">${attempts}번</strong><br>
-    무작위 힌트 사용 수: <strong style="color:var(--accent-gold); font-size:1.4rem;">${hintUseCount}번</strong> (최초 무료 힌트 제외)
+    무작위 힌트 사용 수: <strong style="color:var(--accent-gold); font-size:1.4rem;">${hintUseCount}번</strong>
   `;
   
   const container = document.getElementById('victoryCardsContainer');
