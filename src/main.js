@@ -182,8 +182,8 @@ function renderHints() {
 // ------------------------------------------------------------------
 applyDirectHintBtn.addEventListener('click', () => {
   const mapping = [
-    { stat: 'attribute', el: directAttribute },
     { stat: 'frameType', el: directFrame },
+    { stat: 'attribute', el: directAttribute },
     { stat: 'level', el: directLevel },
     { stat: 'race', el: directRace },
     { stat: 'atk', el: directAtk },
