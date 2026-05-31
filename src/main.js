@@ -1,5 +1,8 @@
 import './style.css'
-import { allCards } from './cards_data.js'
+import { allCards as rawCards } from './cards_data.js'
+import { isFrameMatch, isLevelMatch, getValidLevels, renderCardStatsHTML, translateAttribute, translateFrame, translateRace } from './utils.js'
+
+const allCards = rawCards.filter(c => c.frameType !== 'spell' && c.frameType !== 'trap');
 
 // State
 let candidates = [...allCards];
@@ -45,71 +48,10 @@ const directAtk = document.getElementById('directAtk');
 const directDef = document.getElementById('directDef');
 const applyDirectHintBtn = document.getElementById('applyDirectHintBtn');
 
-// Special Rules Checkers
-function isFrameMatch(card, frameToMatch) {
-  if (!card.frameType || !frameToMatch) return false;
-  const t1 = card.frameType.toLowerCase();
-  const t2 = frameToMatch.toLowerCase();
-  
-  if (t1 === t2) return true;
-  
-  // Extra deck types match their pendulum variants
-  const extraDeckTypes = ['fusion', 'synchro', 'xyz', 'link', 'ritual'];
-  for (const ext of extraDeckTypes) {
-    if (t1 === ext && t2 === ext + '_pendulum') return true;
-    if (t2 === ext && t1 === ext + '_pendulum') return true;
-  }
-  
-  // Any pendulum matches any other pendulum
-  if (t1.includes('pendulum') && t2.includes('pendulum')) return true;
-  
-  // Direct hint "pendulum" matches any pendulum card
-  if (t2 === 'pendulum' && t1.includes('pendulum')) return true;
-  if (t1 === 'pendulum' && t2.includes('pendulum')) return true;
-  
-  return false;
-}
-
-function getValidLevels(card) {
-  const levels = [];
-  
-  if (card.level !== null && card.level !== undefined) {
-    levels.push(parseInt(card.level, 10));
-  } else if (card.frameType !== 'link') {
-    levels.push(0);
-  }
-  
-  if (card.id === 1686814) levels.push(12); // Tzolkin
-  if (card.id === 90884403) levels.push(12); // Bishbaalkin
-  if (card.id === 65301952 || card.id === 65305468) levels.push(1); // FNo.0 (all artworks)
-  if (card.id === 43490025) levels.push(1); // FNo.0 Slash
-  if (card.id === 26505081) levels.push(1); // FNo.0 Draco
-  if (card.id === 52653092) levels.push(1); // SNo.0
-  if (card.id === 52653092) levels.push(1); // Number F0 Zexal
-  
-  return [...new Set(levels)];
-}
-
 // Pre-calculate valid levels for all cards for maximum performance
 allCards.forEach(card => {
   card.validLevels = getValidLevels(card);
 });
-
-function isLevelMatch(card, levelsToMatch) {
-  const cardLevels = card.validLevels || getValidLevels(card);
-  
-  if (!Array.isArray(levelsToMatch)) {
-    if (levelsToMatch === null || levelsToMatch === undefined || levelsToMatch === "") return false;
-    const target = parseInt(levelsToMatch, 10);
-    return cardLevels.includes(target);
-  }
-  
-  for (let i = 0; i < cardLevels.length; i++) {
-    if (levelsToMatch.includes(cardLevels[i])) return true;
-  }
-  
-  return false;
-}
 
 function getMatchProfile(guess, target) {
   let profile = 0;
@@ -158,6 +100,22 @@ function getStatNameKR(stat) {
   return map[stat] || stat;
 }
 
+function getTranslatedValue(stat, value) {
+  if (value === null || value === undefined) return '?';
+  if (Array.isArray(value)) {
+    return value.map(val => {
+      if (stat === 'frameType') return translateFrame(val);
+      if (stat === 'attribute') return translateAttribute(val);
+      if (stat === 'race') return translateRace(val);
+      return val;
+    }).join('/');
+  }
+  if (stat === 'frameType') return translateFrame(value);
+  if (stat === 'attribute') return translateAttribute(value);
+  if (stat === 'race') return translateRace(value);
+  return value;
+}
+
 function renderHints() {
   appliedHintsList.innerHTML = '';
   hints.forEach((hint, index) => {
@@ -167,7 +125,7 @@ function renderHints() {
       li.innerHTML = `
         <span>
           <span class="stat-name">[확실한 힌트]</span> 
-          ${getStatNameKR(hint.stat)}: <span class="stat-val">${hint.value}</span>
+          ${getStatNameKR(hint.stat)}: <span class="stat-val">${getTranslatedValue(hint.stat, hint.value)}</span>
         </span>
         <span class="stat-res res-correct">적용됨</span>
       `;
@@ -177,7 +135,7 @@ function renderHints() {
       li.innerHTML = `
         <span>
           <span class="stat-name">[${hint.cardName}]</span> 
-          ${getStatNameKR(hint.stat)}: <span class="stat-val">${Array.isArray(hint.value) ? hint.value.join('/') : (hint.value !== null ? hint.value : '?')}</span>
+          ${getStatNameKR(hint.stat)}: <span class="stat-val">${getTranslatedValue(hint.stat, hint.value)}</span>
         </span>
         <span class="stat-res ${resClass}">${resText}</span>
       `;
@@ -241,9 +199,17 @@ searchInput.addEventListener('input', (e) => {
     results.forEach(card => {
       const div = document.createElement('div');
       div.className = 'dropdown-item';
+      
+      const imgUrl = card.image_url ? card.image_url.replace('.jpg', '_small.jpg') : '';
+      const statsHTML = renderCardStatsHTML(card);
+      
       div.innerHTML = `
-        <img src="${card.image_url || ''}" alt="">
-        <span>${card.name} <span style="font-size: 0.75rem; color: #888;">(${card.nameEn})</span></span>
+        <img src="${imgUrl}" alt="${card.name}" onerror="this.src='${card.image_url || ''}'">
+        <div class="search-dropdown-info">
+          <div class="search-dropdown-title">${card.name}</div>
+          <div class="search-dropdown-subtitle">${card.nameEn || ''}</div>
+          ${statsHTML}
+        </div>
       `;
       div.onclick = () => {
         selectCard(card);
@@ -272,7 +238,12 @@ function selectCard(card) {
   
   const levelText = card.level !== null ? `Lv/Rk/Lk: ${card.level}` : '';
   const atkDefText = (card.atk !== null ? `ATK: ${card.atk}` : '') + (card.def !== null ? ` / DEF: ${card.def}` : '');
-  infoDetails.innerHTML = `${card.frameType || ''} | ${card.attribute || ''} | ${card.race || ''}<br>${levelText}<br>${atkDefText}`;
+  
+  const frameText = translateFrame(card.frameType) || '';
+  const attrText = translateAttribute(card.attribute) || '';
+  const raceText = translateRace(card.race) || '';
+  
+  infoDetails.innerHTML = `${frameText} | ${attrText} | ${raceText}<br>${levelText}<br>${atkDefText}`;
   
   statusToggles.forEach(btn => {
     btn.classList.remove('active');
