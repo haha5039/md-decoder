@@ -33,6 +33,10 @@
       <main class="container">
         <!-- Left Panel: Input & Controls -->
         <section class="panel input-panel">
+          <div class="flex-between" style="border-bottom: 1px solid var(--border); padding-bottom: 0.75rem; margin-bottom: 1.5rem;">
+            <h2 style="margin: 0; font-size: 1.25rem; display: flex; align-items: center; gap: 0.5rem;">🔍 정보 입력 및 설정</h2>
+            <button id="resetBtn" class="btn-secondary btn-sm" style="margin: 0; width: auto; padding: 0.4rem 0.8rem;">전체 초기화</button>
+          </div>
           
           <!-- Database Synchronization Section -->
           <div class="panel-section" style="background: rgba(255,255,255,0.03); padding: 1rem; border-radius: var(--radius); border: 1px solid var(--border); margin-bottom: 1.5rem;">
@@ -172,7 +176,7 @@
           <hr class="divider">
 
           <!-- Mode 2: Guess Result -->
-          <div class="panel-section mt-4">
+          <div class="panel-section mt-4" id="guessResultSection">
             <h2>2. 인게임 도전 결과 (오답 소거)</h2>
             <p class="hint-desc">게임 내에서 아무 카드나 선택해보고, 나타난 결과를 O/X로 입력하여 후보를 좁힙니다.</p>
             <div class="search-container">
@@ -240,10 +244,7 @@
           </div>
           
           <div class="panel-section applied-hints-container mt-4" id="appliedHintsContainer">
-            <div class="flex-between">
-              <h2>적용된 단서 목록</h2>
-              <button id="resetBtn" class="btn-secondary btn-sm">전체 초기화</button>
-            </div>
+            <h2>적용된 단서 목록</h2>
             <ul id="appliedHintsList" class="hints-list"></ul>
           </div>
         </section>
@@ -258,7 +259,7 @@
             <span class="badge" id="candidatesCount">로딩 중...</span>
           </div>
           
-          <div class="recommendations panel-section mt-4">
+          <div class="recommendations panel-section mt-4" id="recommendationsSection">
             <div class="rec-header-mobile">
               <div class="rec-header-text">
                 <h3 style="margin-bottom: 0.5rem;">💡 추천 픽 및 전략</h3>

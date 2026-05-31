@@ -268,6 +268,12 @@ function submitGuess(guessCard) {
   if (isWin) {
     showVictory(guessCard);
   }
+
+  // Scroll to guess history in the background so it's visible when the modal closes
+  const target = document.getElementById('historySection');
+  if (target) {
+    target.scrollIntoView({ behavior: 'smooth' });
+  }
 }
 
 function updateCandidates() {
