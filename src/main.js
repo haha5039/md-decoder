@@ -637,13 +637,21 @@ function calculateBestGuesses() {
     for (let k = 0; k < 64; k++) {
       const count = buckets[k];
       if (count > 0) {
-        sumOfSquares += count * count;
+        // Winning bucket (63) results in 0 remaining candidates, so it is excluded from remaining-candidates metrics
+        if (k !== 63) {
+          sumOfSquares += count * count;
+          if (count > maxBucket) {
+            maxBucket = count;
+          }
+        }
+        
         const p = count / sampleSize;
         entropy -= p * Math.log2(p);
-        if (count > maxBucket) {
-          maxBucket = count;
-        }
-        if (count === 1) {
+        
+        // One-shot success includes winning this turn (k === 63) or narrowing down to 1 candidate on the next turn
+        if (k === 63) {
+          sizeOneBuckets += count;
+        } else if (count === 1) {
           sizeOneBuckets++;
         }
       }
