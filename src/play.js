@@ -267,12 +267,12 @@ function submitGuess(guessCard) {
   
   if (isWin) {
     showVictory(guessCard);
-  } else {
-    // Scroll to guess history so they can easily check the comparisons (O/X)
-    const target = document.getElementById('historySection');
-    if (target) {
-      target.scrollIntoView({ behavior: 'smooth' });
-    }
+  }
+
+  // Scroll to guess history in the background so it's visible when the modal closes
+  const target = document.getElementById('historySection');
+  if (target) {
+    target.scrollIntoView({ behavior: 'smooth' });
   }
 }
 
