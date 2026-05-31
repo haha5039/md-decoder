@@ -7,21 +7,10 @@ export function isFrameMatch(card, frameToMatch) {
   
   if (t1 === t2) return true;
   
-  // Extra deck types match their pendulum variants
-  const extraDeckTypes = ['fusion', 'synchro', 'xyz', 'link', 'ritual'];
-  for (const ext of extraDeckTypes) {
-    if (t1 === ext && t2 === ext + '_pendulum') return true;
-    if (t2 === ext && t1 === ext + '_pendulum') return true;
-  }
+  const parts1 = t1.split('_');
+  const parts2 = t2.split('_');
   
-  // Any pendulum matches any other pendulum
-  if (t1.includes('pendulum') && t2.includes('pendulum')) return true;
-  
-  // Direct hint "pendulum" matches any pendulum card
-  if (t2 === 'pendulum' && t1.includes('pendulum')) return true;
-  if (t1 === 'pendulum' && t2.includes('pendulum')) return true;
-  
-  return false;
+  return parts1.some(p => parts2.includes(p));
 }
 
 export function getValidLevels(card) {

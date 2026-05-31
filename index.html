@@ -80,6 +80,21 @@
             <p class="hint-desc">게임에서 "이 카드의 속성은 빛이다" 와 같이 밝혀진 확실한 힌트가 있다면 아래에 입력하세요.</p>
             <div class="direct-hint-grid">
               <div class="form-group">
+                <label>카드 프레임</label>
+                <select id="directFrame">
+                  <option value="">선택 안함</option>
+                  <option value="normal">일반 몬스터 (NORMAL)</option>
+                  <option value="effect">효과 몬스터 (EFFECT)</option>
+                  <option value="fusion">융합 몬스터 (FUSION)</option>
+                  <option value="synchro">싱크로 몬스터 (SYNCHRO)</option>
+                  <option value="xyz">엑시즈 몬스터 (XYZ)</option>
+                  <option value="link">링크 몬스터 (LINK)</option>
+                  <option value="ritual">의식 몬스터 (RITUAL)</option>
+                  <option value="pendulum">펜듈럼 (PENDULUM)</option>
+                </select>
+              </div>
+
+              <div class="form-group">
                 <label>속성</label>
                 <select id="directAttribute">
                   <option value="">선택 안함</option>
@@ -94,64 +109,40 @@
               </div>
               
               <div class="form-group">
-                <label>프레임</label>
-                <select id="directFrame">
-                  <option value="">선택 안함</option>
-                  <option value="normal">일반 몬스터</option>
-                  <option value="effect">효과 몬스터</option>
-                  <option value="fusion">융합</option>
-                  <option value="synchro">싱크로</option>
-                  <option value="xyz">엑시즈</option>
-                  <option value="link">링크</option>
-                  <option value="ritual">의식</option>
-                  <option value="pendulum">펜듈럼</option>
-                  <option value="spell">마법</option>
-                  <option value="trap">함정</option>
-                </select>
-              </div>
-              
-              <div class="form-group">
-                <label>레벨/랭크/링크</label>
+                <label>레벨 / 랭크 / 링크</label>
                 <input type="number" id="directLevel" placeholder="예: 8">
               </div>
 
               <div class="form-group">
-                <label>종족 / 카드 종류</label>
+                <label>종족</label>
                 <select id="directRace">
                   <option value="">선택 안함</option>
-                  <option value="Dragon">드래곤족</option>
-                  <option value="Spellcaster">마법사족</option>
-                  <option value="Zombie">언데드족</option>
-                  <option value="Warrior">전사족</option>
-                  <option value="Beast-Warrior">야수전사족</option>
-                  <option value="Beast">야수족</option>
-                  <option value="Winged Beast">비행야수족</option>
-                  <option value="Fiend">악마족</option>
-                  <option value="Fairy">천사족</option>
-                  <option value="Insect">곤충족</option>
-                  <option value="Dinosaur">공룡족</option>
-                  <option value="Reptile">파충류족</option>
-                  <option value="Fish">어류족</option>
-                  <option value="Sea Serpent">해룡족</option>
-                  <option value="Aqua">물족</option>
-                  <option value="Pyro">화염족</option>
-                  <option value="Thunder">번개족</option>
-                  <option value="Rock">암석족</option>
-                  <option value="Plant">식물족</option>
-                  <option value="Machine">기계족</option>
-                  <option value="Psychic">사이킥족</option>
-                  <option value="Wyrm">환룡족</option>
-                  <option value="Cyberse">사이버스족</option>
-                  <option value="Illusion">환상마족</option>
-                  <option value="Divine-Beast">환신야수족</option>
-                  <option value="Creator-God">창조신족</option>
-                  <option value="Normal">일반 (마법/함정)</option>
-                  <option value="Continuous">지속 (마법/함정)</option>
-                  <option value="Equip">장착 (마법)</option>
-                  <option value="Field">필드 (마법)</option>
-                  <option value="Quick-Play">속공 (마법)</option>
-                  <option value="Ritual">의식 (마법)</option>
-                  <option value="Counter">카운터 (함정)</option>
+                  <option value="Dragon">드래곤족 (Dragon)</option>
+                  <option value="Spellcaster">마법사족 (Spellcaster)</option>
+                  <option value="Zombie">언데드족 (Zombie)</option>
+                  <option value="Warrior">전사족 (Warrior)</option>
+                  <option value="Beast-Warrior">야수전사족 (Beast-Warrior)</option>
+                  <option value="Beast">야수족 (Beast)</option>
+                  <option value="Winged Beast">비행야수족 (Winged Beast)</option>
+                  <option value="Fiend">악마족 (Fiend)</option>
+                  <option value="Fairy">천사족 (Fairy)</option>
+                  <option value="Insect">곤충족 (Insect)</option>
+                  <option value="Dinosaur">공룡족 (Dinosaur)</option>
+                  <option value="Reptile">파충류족 (Reptile)</option>
+                  <option value="Fish">어류족 (Fish)</option>
+                  <option value="Sea Serpent">해룡족 (Sea Serpent)</option>
+                  <option value="Aqua">물족 (Aqua)</option>
+                  <option value="Pyro">화염족 (Pyro)</option>
+                  <option value="Thunder">번개족 (Thunder)</option>
+                  <option value="Rock">암석족 (Rock)</option>
+                  <option value="Plant">식물족 (Plant)</option>
+                  <option value="Machine">기계족 (Machine)</option>
+                  <option value="Psychic">사이킥족 (Psychic)</option>
+                  <option value="Wyrm">환룡족 (Wyrm)</option>
+                  <option value="Cyberse">사이버스족 (Cyberse)</option>
+                  <option value="Illusion">환상마족 (Illusion)</option>
+                  <option value="Divine-Beast">환신야수족 (Divine-Beast)</option>
+                  <option value="Creator-God">창조신족 (Creator-God)</option>
                 </select>
               </div>
 
@@ -217,7 +208,7 @@
                   </div>
                 </div>
                 <div class="status-row" data-stat="race">
-                  <span>종족 / 분류</span>
+                  <span>종족</span>
                   <div class="toggle-group">
                     <button class="btn-toggle btn-wrong" data-val="wrong">X (틀림)</button>
                     <button class="btn-toggle btn-correct" data-val="correct">O (맞음)</button>
