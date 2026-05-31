@@ -465,37 +465,34 @@ function showVictory(guessCard) {
   const targetDiv = document.createElement('div');
   targetDiv.style.marginBottom = '1rem';
   targetDiv.innerHTML = `
-    <div style="font-weight: bold; color: var(--accent-gold); margin-bottom: 0.5rem; font-size: 1.1rem;">🎯 원래의 정답 카드</div>
+    <div style="font-weight: bold; color: var(--accent-gold); margin-bottom: 0.5rem; font-size: 1.1rem;">🎯 정답 카드</div>
     <img src="${targetCard.image_url}" alt="${targetCard.name}" style="max-width: 140px; border-radius: var(--radius); border: 2px solid var(--accent-gold);">
     <div style="font-weight: 600; margin-top: 0.25rem; font-size: 1rem;">${targetCard.name}</div>
   `;
   container.appendChild(targetDiv);
   
-  // 2. Guess Card Section (if different)
-  if (guessCard && guessCard.id !== targetCard.id) {
-    const guessDiv = document.createElement('div');
-    guessDiv.style.marginBottom = '1rem';
-    guessDiv.innerHTML = `
-      <div style="font-weight: bold; color: #2ecc71; margin-bottom: 0.5rem; font-size: 1.1rem;">✅ 내가 입력한 카드 (스탯 일치로 복수 정답 인정)</div>
-      <img src="${guessCard.image_url}" alt="${guessCard.name}" style="max-width: 140px; border-radius: var(--radius); border: 2px solid #2ecc71;">
-      <div style="font-weight: 600; margin-top: 0.25rem; font-size: 1rem;">${guessCard.name}</div>
-    `;
-    container.appendChild(guessDiv);
-  }
-  
-  // 3. Other Equivalent Cards
-  const others = equivalentCards.filter(c => c.id !== (guessCard ? guessCard.id : null));
+  // 2. Equivalent Cards (includes guessCard if different from targetCard)
+  const others = equivalentCards;
   if (others.length > 0) {
     const othersDiv = document.createElement('div');
     othersDiv.innerHTML = `
       <div style="font-weight: bold; color: var(--text-muted); margin-bottom: 0.5rem; font-size: 1.1rem;">👥 함께 인정되는 복수 정답 카드 (${others.length}장)</div>
       <div style="display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; max-height: 180px; overflow-y: auto; padding: 0.5rem; background: rgba(0,0,0,0.15); border-radius: 8px;">
-        ${others.map(c => `
-          <div style="text-align: center; width: 75px;">
-            <img src="${c.image_url ? c.image_url.replace('.jpg', '_small.jpg') : ''}" alt="${c.name}" onerror="this.src='${c.image_url}'" style="width: 55px; border-radius: 4px; border: 1px solid var(--border);">
-            <div style="font-size: 0.65rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 0.15rem; color: #f8fafc;" title="${c.name}">${c.name}</div>
-          </div>
-        `).join('')}
+        ${others.map(c => {
+          const isMyGuess = guessCard && c.id === guessCard.id;
+          const borderStyle = isMyGuess 
+            ? 'border: 2px solid #2ecc71; box-shadow: 0 0 10px rgba(46, 204, 113, 0.6);' 
+            : 'border: 1px solid var(--border);';
+          const nameColor = isMyGuess ? '#2ecc71' : '#f8fafc';
+          const nameWeight = isMyGuess ? 'bold' : 'normal';
+          
+          return `
+            <div style="text-align: center; width: 75px;">
+              <img src="${c.image_url ? c.image_url.replace('.jpg', '_small.jpg') : ''}" alt="${c.name}" onerror="this.src='${c.image_url}'" style="width: 55px; border-radius: 4px; ${borderStyle}">
+              <div style="font-size: 0.65rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 0.15rem; color: ${nameColor}; font-weight: ${nameWeight};" title="${c.name}">${c.name}</div>
+            </div>
+          `;
+        }).join('')}
       </div>
     `;
     container.appendChild(othersDiv);
