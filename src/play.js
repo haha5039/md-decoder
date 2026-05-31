@@ -287,6 +287,7 @@ function updateCandidates() {
     // 2. Check against guess history (decoder logic)
     for (let i = 0; i < history.length; i++) {
       const g = history[i];
+      if (g.isHint) continue;
       // A candidate must yield the EXACT same O/X result against the guessed card as the target card did
       if (isFrameMatch(card, g.card.frameType) !== g.frame) return false;
       if ((card.attribute === g.card.attribute) !== g.attribute) return false;
