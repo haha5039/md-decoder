@@ -29,6 +29,7 @@ const candidateList = document.getElementById('candidateList');
 const appliedHintsContainer = document.getElementById('appliedHintsContainer');
 const appliedHintsList = document.getElementById('appliedHintsList');
 const resetBtn = document.getElementById('resetBtn');
+const undoHintBtn = document.getElementById('undoHintBtn');
 const calcRecBtn = document.getElementById('calcRecBtn');
 const recContainer = document.getElementById('recContainer');
 const snipeList = document.getElementById('snipeList');
@@ -149,30 +150,96 @@ function getTranslatedValue(stat, value) {
   return value;
 }
 
+function deleteHintItem(index) {
+  const targetHint = hints[index];
+  if (!targetHint) return;
+  
+  if (targetHint.type === 'direct') {
+    const directHints = hints.filter(h => h.type === 'direct');
+    if (directHints.length > 1) {
+      hintsLeft.value = (parseInt(hintsLeft.value, 10) || 0) + 1;
+    }
+    hints.splice(index, 1);
+  } else {
+    const batchId = targetHint.batchId;
+    hints.splice(index, 1);
+    const batchExists = hints.some(h => h.batchId === batchId);
+    if (!batchExists) {
+      totalAttemptsLeft.value = (parseInt(totalAttemptsLeft.value, 10) || 0) + 1;
+    }
+  }
+  applyFilters();
+}
+
+function undoLastInput() {
+  if (hints.length === 0) return;
+  
+  const lastHint = hints[hints.length - 1];
+  const lastBatchId = lastHint.batchId;
+  const batchHints = hints.filter(h => h.batchId === lastBatchId);
+  const batchType = lastHint.type;
+  
+  if (batchType === 'direct') {
+    const directCountBefore = hints.filter(h => h.type === 'direct').length;
+    const newDirectCount = batchHints.length;
+    const paidBefore = Math.max(0, directCountBefore - 1);
+    const paidAfter = Math.max(0, directCountBefore - newDirectCount - 1);
+    const refund = paidBefore - paidAfter;
+    
+    hintsLeft.value = (parseInt(hintsLeft.value, 10) || 0) + refund;
+  } else {
+    totalAttemptsLeft.value = (parseInt(totalAttemptsLeft.value, 10) || 0) + 1;
+  }
+  
+  hints = hints.filter(h => h.batchId !== lastBatchId);
+  applyFilters();
+}
+
 function renderHints() {
   appliedHintsList.innerHTML = '';
   hints.forEach((hint, index) => {
     const li = document.createElement('li');
+    li.style.display = 'flex';
+    li.style.justifyContent = 'space-between';
+    li.style.alignItems = 'center';
     
+    let hintContent = '';
     if (hint.type === 'direct') {
-      li.innerHTML = `
+      hintContent = `
         <span>
           <span class="stat-name">[확실한 힌트]</span> 
           ${getStatNameKR(hint.stat)}: <span class="stat-val">${getTranslatedValue(hint.stat, hint.value)}</span>
         </span>
-        <span class="stat-res res-correct">적용됨</span>
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+          <span class="stat-res res-correct">적용됨</span>
+        </div>
       `;
     } else {
       const resClass = hint.isCorrect ? 'res-correct' : 'res-wrong';
       const resText = hint.isCorrect ? 'O' : 'X';
-      li.innerHTML = `
+      hintContent = `
         <span>
           <span class="stat-name">[${hint.cardName}]</span> 
           ${getStatNameKR(hint.stat)}: <span class="stat-val">${getTranslatedValue(hint.stat, hint.value)}</span>
         </span>
-        <span class="stat-res ${resClass}">${resText}</span>
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+          <span class="stat-res ${resClass}">${resText}</span>
+        </div>
       `;
     }
+    li.innerHTML = hintContent;
+    
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'btn-delete-hint';
+    deleteBtn.innerHTML = '❌';
+    deleteBtn.style = 'background: none; border: none; color: #ef4444; cursor: pointer; padding: 0 0.5rem; font-size: 1rem;';
+    deleteBtn.onclick = () => deleteHintItem(index);
+    
+    const actionDiv = li.querySelector('div');
+    if (actionDiv) {
+      actionDiv.appendChild(deleteBtn);
+    }
+    
     appliedHintsList.appendChild(li);
   });
 }
@@ -193,6 +260,10 @@ applyDirectHintBtn.addEventListener('click', () => {
   let added = false;
   const isDefNone = directDefNone ? directDefNone.checked : false;
   
+  const directCountBefore = hints.filter(h => h.type === 'direct').length;
+  let newDirectCount = 0;
+  const batchId = 'direct_' + Date.now();
+  
   mapping.forEach(m => {
     if (m.stat === 'def' && isDefNone) {
       const exists = hints.some(h => h.type === 'direct' && h.stat === 'def');
@@ -201,9 +272,11 @@ applyDirectHintBtn.addEventListener('click', () => {
           type: 'direct',
           stat: 'def',
           isCorrect: true,
-          value: null
+          value: null,
+          batchId: batchId
         });
         added = true;
+        newDirectCount++;
       }
       m.el.value = "";
       directDefNone.checked = false;
@@ -219,15 +292,29 @@ applyDirectHintBtn.addEventListener('click', () => {
           type: 'direct',
           stat: m.stat,
           isCorrect: true,
-          value: m.stat === 'level' || m.stat === 'atk' || m.stat === 'def' ? parseInt(val, 10) : val
+          value: m.stat === 'level' || m.stat === 'atk' || m.stat === 'def' ? parseInt(val, 10) : val,
+          batchId: batchId
         });
         added = true;
+        newDirectCount++;
       }
       m.el.value = "";
     }
   });
   
-  if (added) applyFilters();
+  if (added) {
+    const paidInBatch = Math.max(0, newDirectCount - (directCountBefore === 0 ? 1 : 0));
+    if (paidInBatch > 0) {
+      hintsLeft.value = (parseInt(hintsLeft.value, 10) || 0) - paidInBatch;
+    }
+    
+    applyFilters();
+    
+    const target = document.querySelector('.results-panel');
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth' });
+    }
+  }
 });
 
 if (directDefNone) {
@@ -337,6 +424,7 @@ applyGuessBtn.addEventListener('click', () => {
   
   const newHints = [];
   const rows = document.querySelectorAll('.status-row');
+  const batchId = 'guess_' + Date.now();
   
   rows.forEach(row => {
     const stat = row.dataset.stat;
@@ -352,7 +440,8 @@ applyGuessBtn.addEventListener('click', () => {
         stat,
         isCorrect,
         value,
-        cardName: selectedCard.name
+        cardName: selectedCard.name,
+        batchId: batchId
       });
     }
   });
@@ -361,6 +450,8 @@ applyGuessBtn.addEventListener('click', () => {
     alert("최소 1개 이상의 판정 결과를 선택해주세요.");
     return;
   }
+  
+  totalAttemptsLeft.value = (parseInt(totalAttemptsLeft.value, 10) || 0) - 1;
   
   hints = [...hints, ...newHints];
   applyFilters();
@@ -444,6 +535,10 @@ resetBtn.addEventListener('click', () => {
   updateUI();
   strategyMsg.innerHTML = `<span class="badge" style="background:var(--accent-blue)">최적의 카드를 계산해주세요</span>`;
 });
+
+if (undoHintBtn) {
+  undoHintBtn.addEventListener('click', undoLastInput);
+}
 
 // ------------------------------------------------------------------
 // RECOMMENDATION SOLVER
@@ -682,7 +777,11 @@ function calculateBestGuesses() {
   return { snipes, scouts };
 }
 
+let isUpdatingStrategy = false;
 function updateHintStrategy() {
+  if (isUpdatingStrategy) return;
+  isUpdatingStrategy = true;
+
   const attempts = parseInt(totalAttemptsLeft.value, 10) || 0;
   const problems = parseInt(problemsLeft.value, 10) || 1;
   const hLeft = parseInt(hintsLeft.value, 10) || 0;
@@ -696,6 +795,7 @@ function updateHintStrategy() {
         <p style="font-size: 0.85rem; color: #4ade80;">후보가 1개만 남았습니다! 즉시 인게임에서 <strong>[${candidates[0].name}]</strong> 카드로 도전하세요.</p>
       </div>
     `;
+    isUpdatingStrategy = false;
     return;
   }
   
@@ -706,6 +806,7 @@ function updateHintStrategy() {
         <p style="font-size: 0.85rem; color: #f87171;">남은 도전 횟수가 0회입니다. 다음 일일 미션이나 이벤트 추가 횟수를 획득하십시오.</p>
       </div>
     `;
+    isUpdatingStrategy = false;
     return;
   }
   
@@ -758,6 +859,12 @@ function updateHintStrategy() {
       </div>
     </div>
   `;
+
+  if (calculatedResults && activeCriteria !== recommendedLogic) {
+    updateCriteriaUI(recommendedLogic);
+  }
+
+  isUpdatingStrategy = false;
 }
 
 // Add state input change listeners

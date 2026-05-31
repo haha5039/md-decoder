@@ -26,6 +26,7 @@ const victoryModal = document.getElementById('victoryModal');
 const victoryMsg = document.getElementById('victoryMsg');
 const closeVictoryBtn = document.getElementById('closeVictoryBtn');
 const restartGameBtn = document.getElementById('restartGameBtn');
+const undoGuessBtn = document.getElementById('undoGuessBtn');
 
 const candidateGrid = document.getElementById('candidateGrid');
 const candidateCount = document.getElementById('candidateCount');
@@ -372,6 +373,49 @@ function getEquivalentCards(target) {
   );
 }
 
+function rebuildGameStateFromHistory() {
+  attempts = 0;
+  hintUseCount = 0;
+  statKeys.forEach(k => revealedHints[k] = false);
+  systemRevealedKeys = [];
+  
+  // Rebuild in chronological order: oldest to newest
+  // history is [latest, ..., oldest]
+  for (let i = history.length - 1; i >= 0; i--) {
+    const row = history[i];
+    if (row.isHint) {
+      revealedHints[row.key] = true;
+      systemRevealedKeys.push(row.key);
+      if (row.hintType === '무작위 힌트') {
+        hintUseCount++;
+      }
+    } else {
+      attempts++;
+      
+      const frameMatch = isFrameMatch(targetCard, row.card.frameType);
+      const attributeMatch = row.card.attribute === targetCard.attribute;
+      const levelMatch = isLevelMatch(targetCard, row.card.validLevels);
+      const raceMatch = row.card.race === targetCard.race || (row.card.race === null && targetCard.race === null);
+      const atkMatch = row.card.atk === targetCard.atk;
+      const defMatch = row.card.def === targetCard.def;
+      
+      if (frameMatch) revealedHints.frameType = true;
+      if (attributeMatch) revealedHints.attribute = true;
+      if (levelMatch) revealedHints.level = true;
+      if (raceMatch) revealedHints.race = true;
+      if (atkMatch) revealedHints.atk = true;
+      if (defMatch) revealedHints.def = true;
+    }
+  }
+  
+  attemptCountEl.textContent = attempts;
+  hintUseCountEl.textContent = hintUseCount;
+  
+  updateHintUI();
+  updateCandidates();
+  renderHistory();
+}
+
 function renderHistory() {
   historyTbody.innerHTML = '';
   
@@ -448,6 +492,32 @@ function renderHistory() {
       tr.appendChild(makeCell(row.card.def, row.def));
     }
     
+    // Action cell (9th column)
+    const actionTd = document.createElement('td');
+    actionTd.style.padding = '0.75rem';
+    actionTd.style.borderBottom = '1px solid var(--accent-blue)';
+    actionTd.style.textAlign = 'center';
+    
+    if (row.isHint && row.hintType === '최초 힌트') {
+      actionTd.textContent = '-';
+      actionTd.style.color = 'var(--text-muted)';
+      actionTd.style.opacity = '0.5';
+    } else {
+      const delBtn = document.createElement('button');
+      delBtn.className = 'btn-delete-history';
+      delBtn.innerHTML = '❌';
+      delBtn.style = 'background: none; border: none; color: #ef4444; cursor: pointer; padding: 0 0.5rem; font-size: 1rem;';
+      delBtn.onclick = () => {
+        const index = history.indexOf(row);
+        if (index > -1) {
+          history.splice(index, 1);
+          rebuildGameStateFromHistory();
+        }
+      };
+      actionTd.appendChild(delBtn);
+    }
+    tr.appendChild(actionTd);
+    
     historyTbody.appendChild(tr);
   });
 }
@@ -512,6 +582,18 @@ restartGameBtn.addEventListener('click', () => {
   victoryModal.style.display = 'none';
   initGame();
 });
+if (undoGuessBtn) {
+  undoGuessBtn.addEventListener('click', () => {
+    if (history.length === 0) return;
+    const latest = history[0];
+    if (latest.isHint && latest.hintType === '최초 힌트') {
+      alert("최초 힌트는 되돌릴 수 없습니다.");
+      return;
+    }
+    history.shift();
+    rebuildGameStateFromHistory();
+  });
+}
 
 async function loadGameDatabase() {
   startGameBtn.disabled = true;

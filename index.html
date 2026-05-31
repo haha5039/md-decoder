@@ -35,7 +35,10 @@
         <section class="panel input-panel">
           <div class="flex-between" style="border-bottom: 1px solid var(--border); padding-bottom: 0.75rem; margin-bottom: 1.5rem;">
             <h2 style="margin: 0; font-size: 1.25rem; display: flex; align-items: center; gap: 0.5rem;">🔍 정보 입력 및 설정</h2>
-            <button id="resetBtn" class="btn-secondary btn-sm" style="margin: 0; width: auto; padding: 0.4rem 0.8rem;">전체 초기화</button>
+            <div style="display: flex; gap: 0.5rem;">
+              <button id="undoHintBtn" class="btn-secondary btn-sm" style="margin: 0; width: auto; padding: 0.4rem 0.8rem; background: rgba(59, 130, 246, 0.2); border-color: var(--accent-blue);">되돌리기</button>
+              <button id="resetBtn" class="btn-secondary btn-sm" style="margin: 0; width: auto; padding: 0.4rem 0.8rem;">전체 초기화</button>
+            </div>
           </div>
           
           <!-- Database Synchronization Section -->

@@ -193,7 +193,10 @@
               </section>
 
               <section class="panel">
-                <h2>정답 추측하기</h2>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                <h2 style="margin: 0;">정답 추측하기</h2>
+                <button id="undoGuessBtn" class="btn-secondary" style="font-size: 0.85rem; padding: 0.4rem 1rem; width: auto; box-shadow: none; background: rgba(59, 130, 246, 0.2); border-color: var(--accent-blue);">되돌리기</button>
+              </div>
                 <div style="margin-bottom: 1rem; color: var(--text-light); display: flex; gap: 1.25rem; flex-wrap: wrap;">
                   <div>현재 시도 횟수: <strong id="attemptCount" style="color: var(--accent-gold); font-size: 1.3rem;">0</strong>번</div>
                   <div>무작위 힌트 사용 수: <strong id="hintUseCount" style="color: var(--accent-gold); font-size: 1.3rem;">0</strong>번</div>
@@ -234,6 +237,7 @@
                     <th style="padding: 0.75rem; border-bottom: 2px solid var(--accent-blue);">종족</th>
                     <th style="padding: 0.75rem; border-bottom: 2px solid var(--accent-blue);">공격력</th>
                     <th style="padding: 0.75rem; border-bottom: 2px solid var(--accent-blue);">수비력</th>
+                    <th style="padding: 0.75rem; border-bottom: 2px solid var(--accent-blue); width: 80px; text-align: center;">되돌리기</th>
                   </tr>
                 </thead>
                 <tbody id="historyTbody">
