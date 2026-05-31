@@ -28,8 +28,8 @@ const okConfirmBtn = document.getElementById('okConfirmBtn');
 
 const victoryModal = document.getElementById('victoryModal');
 const victoryMsg = document.getElementById('victoryMsg');
-const victoryImg = document.getElementById('victoryImg');
 const closeVictoryBtn = document.getElementById('closeVictoryBtn');
+const restartGameBtn = document.getElementById('restartGameBtn');
 
 const candidateGrid = document.getElementById('candidateGrid');
 const candidateCount = document.getElementById('candidateCount');
@@ -57,6 +57,7 @@ let revealedHints = {
   atk: false,
   def: false
 };
+let systemRevealedKeys = [];
 
 let candidates = [];
 
@@ -74,6 +75,7 @@ function initGame() {
   pendingGuessCard = null;
   history = [];
   statKeys.forEach(k => revealedHints[k] = false);
+  systemRevealedKeys = [];
   candidates = [...allCards];
   
   // UI Reset
@@ -124,6 +126,7 @@ function revealRandomHint() {
   
   const randomKey = unrevealed[Math.floor(Math.random() * unrevealed.length)];
   revealedHints[randomKey] = true;
+  systemRevealedKeys.push(randomKey);
   updateHintUI();
   updateCandidates();
 }
@@ -233,7 +236,8 @@ function submitGuess(guessCard) {
     level: isLevelMatch(targetCard, guessCard.validLevels),
     race: guessCard.race === targetCard.race || (guessCard.race === null && targetCard.race === null),
     atk: guessCard.atk === targetCard.atk,
-    def: guessCard.def === targetCard.def
+    def: guessCard.def === targetCard.def,
+    systemHints: [...systemRevealedKeys] // Capture system revealed hints at this moment
   };
   
   // Auto-reveal matching stats
@@ -249,11 +253,11 @@ function submitGuess(guessCard) {
   renderHistory();
   updateCandidates();
   
-  // Check win condition
-  const isWin = result.frame && result.attribute && result.level && result.race && result.atk && result.def && guessCard.id === targetCard.id;
+  // Check win condition (all 6 stats match)
+  const isWin = result.frame && result.attribute && result.level && result.race && result.atk && result.def;
   
   if (isWin) {
-    showVictory();
+    showVictory(guessCard);
   }
 }
 
@@ -322,6 +326,36 @@ function renderCandidates() {
   });
 }
 
+function getHintText(key, card) {
+  let val = card[key];
+  if (key === 'frameType') {
+    return `카드 프레임: ${translateFrame(val)}`;
+  } else if (key === 'attribute') {
+    return `속성: ${translateAttribute(val)}`;
+  } else if (key === 'level') {
+    return `레벨/랭크/링크: ${val}`;
+  } else if (key === 'race') {
+    return `종족/분류: ${translateRace(val)}`;
+  } else if (key === 'atk') {
+    return `공격력: ${val === null || val === undefined ? '-' : val}`;
+  } else if (key === 'def') {
+    return `수비력: ${val === null || val === undefined ? '-' : val}`;
+  }
+  return '';
+}
+
+function getEquivalentCards(target) {
+  return allCards.filter(card => 
+    card.id !== target.id && // exclude the target itself
+    isFrameMatch(target, card.frameType) &&
+    isLevelMatch(target, card.validLevels) &&
+    card.attribute === target.attribute &&
+    (card.race === target.race || (card.race === null && target.race === null)) &&
+    card.atk === target.atk &&
+    card.def === target.def
+  );
+}
+
 function renderHistory() {
   historyTbody.innerHTML = '';
   
@@ -336,6 +370,23 @@ function renderHistory() {
     imgTd.innerHTML = `<img src="${imgUrl}" alt="card" style="width: 40px; border-radius: 3px;" loading="lazy" onerror="this.src='${row.card.image_url}'">`;
     tr.appendChild(imgTd);
     
+    // Name cell
+    const nameTd = document.createElement('td');
+    nameTd.textContent = row.card.name;
+    nameTd.style.padding = '0.75rem';
+    nameTd.style.borderBottom = '1px solid var(--accent-blue)';
+    tr.appendChild(nameTd);
+    
+    // Revealed Hints cell
+    const hintTd = document.createElement('td');
+    hintTd.style.padding = '0.75rem';
+    hintTd.style.borderBottom = '1px solid var(--accent-blue)';
+    hintTd.style.fontSize = '0.75rem';
+    hintTd.style.color = 'var(--accent-gold)';
+    const hintsList = row.systemHints.map(key => getHintText(key, targetCard));
+    hintTd.innerHTML = hintsList.length > 0 ? hintsList.join('<br>') : '-';
+    tr.appendChild(hintTd);
+    
     // Cell helper
     const makeCell = (value, isMatch) => {
       const td = document.createElement('td');
@@ -348,13 +399,6 @@ function renderHistory() {
       return td;
     };
     
-    // Name cell
-    const nameTd = document.createElement('td');
-    nameTd.textContent = row.card.name;
-    nameTd.style.padding = '0.75rem';
-    nameTd.style.borderBottom = '1px solid var(--accent-blue)';
-    tr.appendChild(nameTd);
-    
     tr.appendChild(makeCell(translateFrame(row.card.frameType), row.frame));
     tr.appendChild(makeCell(translateAttribute(row.card.attribute), row.attribute));
     tr.appendChild(makeCell(row.card.level, row.level));
@@ -366,15 +410,66 @@ function renderHistory() {
   });
 }
 
-function showVictory() {
-  victoryMsg.innerHTML = `정답 카드: <strong>${targetCard.name}</strong><br>총 시도 횟수: <strong style="color:var(--accent-gold); font-size:1.5rem;">${attempts}번</strong>`;
-  victoryImg.src = targetCard.image_url;
+function showVictory(guessCard) {
+  const equivalentCards = getEquivalentCards(targetCard);
+  
+  victoryMsg.innerHTML = `
+    총 시도 횟수: <strong style="color:var(--accent-gold); font-size:1.4rem;">${attempts}번</strong><br>
+    무작위 힌트 사용 수: <strong style="color:var(--accent-gold); font-size:1.4rem;">${hintUseCount}번</strong> (최초 무료 힌트 제외)
+  `;
+  
+  const container = document.getElementById('victoryCardsContainer');
+  container.innerHTML = '';
+  
+  // 1. Target Card Section
+  const targetDiv = document.createElement('div');
+  targetDiv.style.marginBottom = '1rem';
+  targetDiv.innerHTML = `
+    <div style="font-weight: bold; color: var(--accent-gold); margin-bottom: 0.5rem; font-size: 1.1rem;">🎯 원래의 정답 카드</div>
+    <img src="${targetCard.image_url}" alt="${targetCard.name}" style="max-width: 140px; border-radius: var(--radius); border: 2px solid var(--accent-gold);">
+    <div style="font-weight: 600; margin-top: 0.25rem; font-size: 1rem;">${targetCard.name}</div>
+  `;
+  container.appendChild(targetDiv);
+  
+  // 2. Guess Card Section (if different)
+  if (guessCard && guessCard.id !== targetCard.id) {
+    const guessDiv = document.createElement('div');
+    guessDiv.style.marginBottom = '1rem';
+    guessDiv.innerHTML = `
+      <div style="font-weight: bold; color: #2ecc71; margin-bottom: 0.5rem; font-size: 1.1rem;">✅ 내가 입력한 카드 (스탯 일치로 복수 정답 인정)</div>
+      <img src="${guessCard.image_url}" alt="${guessCard.name}" style="max-width: 140px; border-radius: var(--radius); border: 2px solid #2ecc71;">
+      <div style="font-weight: 600; margin-top: 0.25rem; font-size: 1rem;">${guessCard.name}</div>
+    `;
+    container.appendChild(guessDiv);
+  }
+  
+  // 3. Other Equivalent Cards
+  const others = equivalentCards.filter(c => c.id !== (guessCard ? guessCard.id : null));
+  if (others.length > 0) {
+    const othersDiv = document.createElement('div');
+    othersDiv.innerHTML = `
+      <div style="font-weight: bold; color: var(--text-muted); margin-bottom: 0.5rem; font-size: 1.1rem;">👥 함께 인정되는 복수 정답 카드 (${others.length}장)</div>
+      <div style="display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; max-height: 180px; overflow-y: auto; padding: 0.5rem; background: rgba(0,0,0,0.15); border-radius: 8px;">
+        ${others.map(c => `
+          <div style="text-align: center; width: 75px;">
+            <img src="${c.image_url ? c.image_url.replace('.jpg', '_small.jpg') : ''}" alt="${c.name}" onerror="this.src='${c.image_url}'" style="width: 55px; border-radius: 4px; border: 1px solid var(--border);">
+            <div style="font-size: 0.65rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 0.15rem; color: #f8fafc;" title="${c.name}">${c.name}</div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+    container.appendChild(othersDiv);
+  }
+  
   victoryModal.style.display = 'flex';
 }
 
 // Event Listeners
 startGameBtn.addEventListener('click', initGame);
 closeVictoryBtn.addEventListener('click', () => {
+  victoryModal.style.display = 'none';
+});
+restartGameBtn.addEventListener('click', () => {
   victoryModal.style.display = 'none';
   initGame();
 });
