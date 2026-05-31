@@ -34,6 +34,23 @@
         <!-- Left Panel: Input & Controls -->
         <section class="panel input-panel">
           
+          <!-- Database Synchronization Section -->
+          <div class="panel-section" style="background: rgba(255,255,255,0.03); padding: 1rem; border-radius: var(--radius); border: 1px solid var(--border); margin-bottom: 1.5rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+              <div>
+                <h2 style="margin: 0; font-size: 1.1rem; color: var(--text-main);">📅 최신 카드 데이터 동기화</h2>
+                <p style="font-size: 0.8rem; color: var(--text-muted); margin: 0.25rem 0 0 0;" id="dbStatusText">현재: 내장 데이터 사용 중</p>
+              </div>
+              <button id="updateDbBtn" class="btn-secondary" style="width: auto; padding: 0.5rem 1rem; font-size: 0.85rem; margin: 0;">최신 데이터 받기</button>
+            </div>
+            <div id="updateProgressContainer" style="display: none; margin-top: 0.75rem;">
+              <div style="height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; overflow: hidden;">
+                <div id="updateProgressBar" style="width: 0%; height: 100%; background: var(--accent-gold); transition: width 0.3s;"></div>
+              </div>
+              <p id="updateProgressText" style="font-size: 0.75rem; color: var(--accent-gold); margin-top: 0.25rem; text-align: right; font-weight: bold;">0%</p>
+            </div>
+          </div>
+
           <div class="panel-section strategy-section" style="background: rgba(0,0,0,0.2); padding: 1rem; border-radius: var(--radius); border: 1px solid var(--accent-gold); margin-bottom: 1.5rem;">
             <h2>0. 남은 횟수 설정 (힌트 추천용)</h2>
             <p class="hint-desc">힌트를 지금 쓸지, 도전을 할지 똑똑하게 추천해드립니다.</p>
@@ -140,7 +157,12 @@
               </div>
 
               <div class="form-group">
-                <label>수비력</label>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem;">
+                  <label style="margin: 0;">수비력</label>
+                  <label style="font-size: 0.75rem; color: var(--text-muted); display: inline-flex; align-items: center; gap: 0.25rem; cursor: pointer; margin: 0; user-select: none;">
+                    <input type="checkbox" id="directDefNone" style="width: auto; height: auto; margin: 0;"> 없음 (링크 등)
+                  </label>
+                </div>
                 <input type="number" id="directDef" placeholder="예: 2000">
               </div>
             </div>
@@ -276,8 +298,12 @@
             <h3>정답 후보 리스트 (<span id="visibleCandidatesCount">0</span>장 표시)</h3>
             <div id="candidateList" class="card-grid"></div>
           </div>
-        </section>
       </main>
+      <footer class="app-footer" style="margin-top: 3rem; padding: 2rem 1rem; border-top: 1px solid var(--border); text-align: center; font-size: 0.85rem; color: var(--text-light); line-height: 1.6;">
+        <p>본 서비스는 개인적인 학습 및 연구 목적으로 개발되었으며, AI(Antigravity)를 활용하여 제작되었습니다.</p>
+        <p>카드 데이터는 <a href="https://ygoprodeck.com/api-guide/" target="_blank" style="color: var(--accent-blue); text-decoration: underline;">YGOPRODeck API</a>를 사용하고 있습니다.</p>
+        <p style="margin-top: 0.5rem;">GitHub 저장소: <a href="https://github.com/haha5039/md-decoder" target="_blank" style="color: var(--accent-gold); text-decoration: underline; font-weight: bold;">github.com/haha5039/md-decoder</a></p>
+      </footer>
     </div>
     <script type="module" src="/src/main.js"></script>
   </body>

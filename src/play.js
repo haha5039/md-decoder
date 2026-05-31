@@ -1,13 +1,9 @@
 import './style.css';
 import { allCards as rawCards } from './cards_data.js';
 import { isFrameMatch, isLevelMatch, getValidLevels, renderCardStatsHTML, translateAttribute, translateFrame, translateRace } from './utils.js';
+import { getCachedCards } from './db.js';
 
-const allCards = rawCards.filter(c => c.frameType !== 'spell' && c.frameType !== 'trap');
-
-// Pre-calculate valid levels for all cards for maximum performance
-allCards.forEach(card => {
-  card.validLevels = getValidLevels(card);
-});
+let allCards = [];
 
 
 // DOM Elements
@@ -510,3 +506,32 @@ restartGameBtn.addEventListener('click', () => {
   victoryModal.style.display = 'none';
   initGame();
 });
+
+async function loadGameDatabase() {
+  startGameBtn.disabled = true;
+  startGameBtn.textContent = '데이터 로딩 중...';
+  try {
+    const cached = await getCachedCards();
+    if (cached && cached.length > 0) {
+      allCards = cached.filter(c => c.frameType !== 'spell' && c.frameType !== 'trap');
+      console.log(`Play mode loaded ${allCards.length} cards from IndexedDB.`);
+    } else {
+      allCards = rawCards.filter(c => c.frameType !== 'spell' && c.frameType !== 'trap');
+      console.log(`Play mode loaded ${allCards.length} cards from static cards_data.js.`);
+    }
+  } catch (err) {
+    console.error("Play mode failed to load IndexedDB, fallback to static:", err);
+    allCards = rawCards.filter(c => c.frameType !== 'spell' && c.frameType !== 'trap');
+  }
+
+  // Pre-calculate valid levels
+  allCards.forEach(card => {
+    card.validLevels = getValidLevels(card);
+  });
+
+  startGameBtn.disabled = false;
+  startGameBtn.textContent = '무작위 카드로 시작하기';
+}
+
+// Init database
+loadGameDatabase();
