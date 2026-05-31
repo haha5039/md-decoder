@@ -312,6 +312,14 @@ function selectCard(card) {
     btn.classList.remove('active');
     btn.dataset.selected = "false";
   });
+
+  // Mobile usability: scroll to input section when selecting a card
+  if (window.innerWidth <= 768) {
+    const target = document.getElementById('guessResultSection');
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth' });
+    }
+  }
 }
 
 statusToggles.forEach(btn => {
@@ -361,6 +369,14 @@ applyGuessBtn.addEventListener('click', () => {
   
   selectedCardContainer.classList.add('hidden');
   selectedCard = null;
+
+  // Mobile usability: scroll to recommendations section after submitting judgment
+  if (window.innerWidth <= 768) {
+    const target = document.getElementById('recommendationsSection');
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth' });
+    }
+  }
 });
 
 // ------------------------------------------------------------------
@@ -400,13 +416,35 @@ resetBtn.addEventListener('click', () => {
   recContainer.classList.add('hidden');
   snipeList.innerHTML = '';
   scoutList.innerHTML = '';
-  if (directDefNone) {
-    directDefNone.checked = false;
-  }
+  
+  // Reset direct inputs (Mode 1)
+  if (directAttribute) directAttribute.value = "";
+  if (directFrame) directFrame.value = "";
+  if (directLevel) directLevel.value = "";
+  if (directRace) directRace.value = "";
+  if (directAtk) directAtk.value = "";
+  if (directDefNone) directDefNone.checked = false;
   if (directDef) {
     directDef.disabled = false;
     directDef.value = "";
   }
+  
+  // Reset search & selectedCard (Mode 2)
+  if (searchInput) searchInput.value = "";
+  selectedCard = null;
+  if (selectedCardContainer) selectedCardContainer.classList.add('hidden');
+  
+  // Reset toggles (Mode 2)
+  statusToggles.forEach(btn => {
+    btn.classList.remove('active');
+    btn.dataset.selected = "false";
+  });
+  
+  // Reset numeric settings (0. 남은 횟수 설정)
+  if (hintsLeft) hintsLeft.value = "1";
+  if (totalAttemptsLeft) totalAttemptsLeft.value = "3";
+  if (problemsLeft) problemsLeft.value = "1";
+  
   updateUI();
   strategyMsg.innerHTML = `<span class="badge" style="background:var(--accent-blue)">최적의 카드를 계산해주세요</span>`;
 });
