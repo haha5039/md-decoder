@@ -508,6 +508,8 @@ restartGameBtn.addEventListener('click', () => {
 });
 
 async function loadGameDatabase() {
+  startGameBtn.disabled = true;
+  startGameBtn.textContent = '데이터 로딩 중...';
   try {
     const cached = await getCachedCards();
     if (cached && cached.length > 0) {
@@ -526,6 +528,9 @@ async function loadGameDatabase() {
   allCards.forEach(card => {
     card.validLevels = getValidLevels(card);
   });
+
+  startGameBtn.disabled = false;
+  startGameBtn.textContent = '무작위 카드로 시작하기';
 }
 
 // Init database
