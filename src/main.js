@@ -313,12 +313,10 @@ function selectCard(card) {
     btn.dataset.selected = "false";
   });
 
-  // Mobile usability: scroll to input section when selecting a card
-  if (window.innerWidth <= 768) {
-    const target = document.getElementById('guessResultSection');
-    if (target) {
-      target.scrollIntoView({ behavior: 'smooth' });
-    }
+  // Scroll to input section when selecting a card
+  const target = document.getElementById('guessResultSection');
+  if (target) {
+    target.scrollIntoView({ behavior: 'smooth' });
   }
 }
 
@@ -370,12 +368,10 @@ applyGuessBtn.addEventListener('click', () => {
   selectedCardContainer.classList.add('hidden');
   selectedCard = null;
 
-  // Mobile usability: scroll to recommendations section after submitting judgment
-  if (window.innerWidth <= 768) {
-    const target = document.getElementById('recommendationsSection');
-    if (target) {
-      target.scrollIntoView({ behavior: 'smooth' });
-    }
+  // Scroll to recommendations section after submitting judgment
+  const target = document.getElementById('recommendationsSection');
+  if (target) {
+    target.scrollIntoView({ behavior: 'smooth' });
   }
 });
 
