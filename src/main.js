@@ -1,6 +1,6 @@
 import './style.css'
 import { allCards as rawCards } from './cards_data.js'
-import { isFrameMatch, isLevelMatch, getValidLevels, renderCardStatsHTML, translateAttribute, translateFrame, translateRace } from './utils.js'
+import { isFrameMatch, isLevelMatch, getValidLevels, renderCardStatsHTML, translateAttribute, translateFrame, translateRace, getTargetRulesLevel } from './utils.js'
 
 import { getCachedCards, saveCachedCards } from './db.js'
 
@@ -106,7 +106,7 @@ function getMatchProfile(guess, target) {
   const frameEnum = isFrame ? (frameTypeMap[target.frameType.toLowerCase()] ?? 0) : 12;
   
   const isLvl = isLevelMatch(target, guess.validLevels);
-  const lvlEnum = isLvl ? (target.level !== null ? target.level : 0) : 13;
+  const lvlEnum = isLvl ? (getTargetRulesLevel(target) !== null ? getTargetRulesLevel(target) : 0) : 13;
   
   const attrBit = (guess.attribute === target.attribute) ? 1 : 0;
   const raceBit = (guess.race === target.race || (guess.race === null && target.race === null)) ? 1 : 0;
@@ -331,7 +331,9 @@ applyDirectHintBtn.addEventListener('click', () => {
     
     const target = document.querySelector('.results-panel');
     if (target) {
-      target.scrollIntoView({ behavior: 'smooth' });
+      setTimeout(() => {
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 150);
     }
   }
 });
@@ -422,7 +424,9 @@ function selectCard(card) {
   // Scroll to input section when selecting a card
   const target = document.getElementById('guessResultSection');
   if (target) {
-    target.scrollIntoView({ behavior: 'smooth' });
+    setTimeout(() => {
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 100);
   }
 }
 
@@ -481,7 +485,9 @@ applyGuessBtn.addEventListener('click', () => {
   // Scroll to recommendations section after submitting judgment
   const target = document.getElementById('recommendationsSection');
   if (target) {
-    target.scrollIntoView({ behavior: 'smooth' });
+    setTimeout(() => {
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 150);
   }
 });
 
@@ -493,12 +499,23 @@ function applyFilters() {
     for (let hint of hints) {
       let isMatch = false;
       
-      if (hint.stat === 'frameType') {
-        isMatch = isFrameMatch(card, hint.value);
-      } else if (hint.stat === 'level') {
-        isMatch = isLevelMatch(card, hint.value);
+      if (hint.type === 'direct') {
+        if (hint.stat === 'frameType') {
+          isMatch = (card.frameType === hint.value);
+        } else if (hint.stat === 'level') {
+          isMatch = (getTargetRulesLevel(card) === hint.value);
+        } else {
+          isMatch = (card[hint.stat] === hint.value);
+        }
       } else {
-        isMatch = (card[hint.stat] === hint.value);
+        // Guess type
+        if (hint.stat === 'frameType') {
+          isMatch = isFrameMatch(card, hint.value);
+        } else if (hint.stat === 'level') {
+          isMatch = isLevelMatch(card, hint.value);
+        } else {
+          isMatch = (card[hint.stat] === hint.value);
+        }
       }
       
       if (hint.isCorrect && !isMatch) return false;

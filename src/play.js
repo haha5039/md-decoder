@@ -1,6 +1,6 @@
 import './style.css';
 import { allCards as rawCards } from './cards_data.js';
-import { isFrameMatch, isLevelMatch, getValidLevels, renderCardStatsHTML, translateAttribute, translateFrame, translateRace } from './utils.js';
+import { isFrameMatch, isLevelMatch, getValidLevels, renderCardStatsHTML, translateAttribute, translateFrame, translateRace, getTargetRulesLevel } from './utils.js';
 import { getCachedCards } from './db.js';
 
 let allCards = [];
@@ -157,7 +157,7 @@ function getStatDisplay(val) {
 function updateHintUI() {
   statKeys.forEach(key => {
     if (revealedHints[key]) {
-      let val = targetCard[key];
+      let val = (key === 'level') ? getTargetRulesLevel(targetCard) : targetCard[key];
       if (key === 'frameType') val = translateFrame(val);
       else if (key === 'attribute') val = translateAttribute(val);
       else if (key === 'race') val = translateRace(val);
@@ -273,15 +273,17 @@ function submitGuess(guessCard) {
   // Scroll to guess history in the background so it's visible when the modal closes
   const target = document.getElementById('historySection');
   if (target) {
-    target.scrollIntoView({ behavior: 'smooth' });
+    setTimeout(() => {
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 100);
   }
 }
 
 function updateCandidates() {
   candidates = allCards.filter(card => {
-    // 1. Check against revealed hints
-    if (revealedHints.frameType && !isFrameMatch(card, targetCard.frameType)) return false;
-    if (revealedHints.level && !isLevelMatch(card, targetCard.validLevels)) return false;
+    // 1. Check against revealed hints (must match target exactly since properties are revealed)
+    if (revealedHints.frameType && card.frameType !== targetCard.frameType) return false;
+    if (revealedHints.level && getTargetRulesLevel(card) !== getTargetRulesLevel(targetCard)) return false;
     if (revealedHints.attribute && card.attribute !== targetCard.attribute) return false;
     if (revealedHints.race && card.race !== targetCard.race) return false;
     if (revealedHints.atk && card.atk !== targetCard.atk) return false;

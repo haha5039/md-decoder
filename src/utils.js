@@ -33,6 +33,14 @@ export function getValidLevels(card) {
   return [...new Set(levels)];
 }
 
+export function getTargetRulesLevel(card) {
+  if (!card) return null;
+  // Special rule for cards treated as level 12 or 1
+  if (card.id === 1686814 || card.id === 90884403) return 12; // Tzolkin, Bishbaalkin
+  if (card.id === 65301952 || card.id === 65305468 || card.id === 43490025 || card.id === 26505081 || card.id === 52653092) return 1; // FNo.0 cards, SNo.0
+  return card.level;
+}
+
 export function isLevelMatch(card, levelsToMatch) {
   const cardLevels = card.validLevels || getValidLevels(card);
   
