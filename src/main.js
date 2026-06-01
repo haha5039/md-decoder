@@ -106,7 +106,7 @@ function getMatchProfile(guess, target) {
   const frameEnum = isFrame ? (frameTypeMap[target.frameType.toLowerCase()] ?? 0) : 12;
   
   const isLvl = isLevelMatch(target, guess.validLevels);
-  const lvlEnum = isLvl ? (getTargetRulesLevel(target) !== null ? getTargetRulesLevel(target) : 0) : 13;
+  const lvlEnum = isLvl ? (getTargetRulesLevel(target) !== null ? getTargetRulesLevel(target) : 0) : 14;
   
   const attrBit = (guess.attribute === target.attribute) ? 1 : 0;
   const raceBit = (guess.race === target.race || (guess.race === null && target.race === null)) ? 1 : 0;
@@ -723,12 +723,14 @@ function calculateBestGuesses() {
   const ratio = total / sampleSize;
   const ratioForSquares = total / (sampleSize * sampleSize);
   
+  const buckets = new Int32Array(4096);
+  
   // We scan ALL 13600+ cards to find the best scouts, regardless of candidate count
   for (let i = 0; i < allCards.length; i++) {
     const guess = allCards[i];
     if (guessedCardNames.has(guess.name)) continue;
     
-    const buckets = new Int32Array(4096);
+    buckets.fill(0);
     
     // Evaluate against the sample pool
     for (let j = 0; j < sampleSize; j++) {
@@ -742,7 +744,7 @@ function calculateBestGuesses() {
     let maxBucket = 0;
     let sizeOneBuckets = 0;
     
-    const winProfile = (frameTypeMap[guess.frameType.toLowerCase()] ?? 0) | ((guess.level !== null ? guess.level : 0) << 4) | (15 << 8);
+    const winProfile = (frameTypeMap[guess.frameType.toLowerCase()] ?? 0) | ((getTargetRulesLevel(guess) !== null ? getTargetRulesLevel(guess) : 0) << 4) | (15 << 8);
     
     for (let k = 0; k < 4096; k++) {
       const count = buckets[k];
