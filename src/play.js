@@ -1,6 +1,6 @@
 import './style.css';
 import { allCards as rawCards } from './cards_data.js';
-import { isFrameMatch, isLevelMatch, getValidLevels, renderCardStatsHTML, translateAttribute, translateFrame, translateRace } from './utils.js';
+import { isFrameMatch, isLevelMatch, getValidLevels, renderCardStatsHTML, translateAttribute, translateFrame, translateRace, getTargetRulesLevel, filterCandidatesByHints } from './utils.js';
 import { getCachedCards } from './db.js';
 
 let allCards = [];
@@ -26,6 +26,7 @@ const victoryModal = document.getElementById('victoryModal');
 const victoryMsg = document.getElementById('victoryMsg');
 const closeVictoryBtn = document.getElementById('closeVictoryBtn');
 const restartGameBtn = document.getElementById('restartGameBtn');
+const undoGuessBtn = document.getElementById('undoGuessBtn');
 
 const candidateGrid = document.getElementById('candidateGrid');
 const candidateCount = document.getElementById('candidateCount');
@@ -156,7 +157,7 @@ function getStatDisplay(val) {
 function updateHintUI() {
   statKeys.forEach(key => {
     if (revealedHints[key]) {
-      let val = targetCard[key];
+      let val = (key === 'level') ? getTargetRulesLevel(targetCard) : targetCard[key];
       if (key === 'frameType') val = translateFrame(val);
       else if (key === 'attribute') val = translateAttribute(val);
       else if (key === 'race') val = translateRace(val);
@@ -272,39 +273,52 @@ function submitGuess(guessCard) {
   // Scroll to guess history in the background so it's visible when the modal closes
   const target = document.getElementById('historySection');
   if (target) {
-    target.scrollIntoView({ behavior: 'smooth' });
+    setTimeout(() => {
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 100);
   }
 }
 
 function updateCandidates() {
-  candidates = allCards.filter(card => {
-    // 1. Check against revealed hints
-    if (revealedHints.frameType && !isFrameMatch(card, targetCard.frameType)) return false;
-    if (revealedHints.level && !isLevelMatch(card, targetCard.validLevels)) return false;
-    if (revealedHints.attribute && card.attribute !== targetCard.attribute) return false;
-    if (revealedHints.race && card.race !== targetCard.race) return false;
-    if (revealedHints.atk && card.atk !== targetCard.atk) return false;
-    if (revealedHints.def && card.def !== targetCard.def) return false;
-    
-    // 2. Check against guess history (decoder logic)
-    for (let i = 0; i < history.length; i++) {
-      const g = history[i];
-      if (g.isHint) continue;
-      // A candidate must yield the EXACT same O/X result against the guessed card as the target card did
-      if (isFrameMatch(card, g.card.frameType) !== g.frame) return false;
-      if ((card.attribute === g.card.attribute) !== g.attribute) return false;
-      if (isLevelMatch(card, g.card.validLevels) !== g.level) return false;
-      
-      const raceMatch = card.race === g.card.race || (card.race === null && g.card.race === null);
-      if (raceMatch !== g.race) return false;
-      
-      if ((card.atk === g.card.atk) !== g.atk) return false;
-      if ((card.def === g.card.def) !== g.def) return false;
-    }
-    
-    return true;
-  });
+  // Build a unified hints array from the game state, using the same format as main.js
+  const gameHints = [];
   
+  // 1. System-revealed hints → 'direct' type (exact match with target)
+  for (const key of systemRevealedKeys) {
+    gameHints.push({
+      type: 'direct',
+      stat: key,
+      isCorrect: true,
+      value: key === 'level' ? getTargetRulesLevel(targetCard) : targetCard[key],
+      isExact: true
+    });
+  }
+  
+  // 2. Guess history → 'guess' type (game-rule partial matching)
+  for (const g of history) {
+    if (g.isHint) continue;
+    
+    const guessCard = g.card;
+    const statMappings = [
+      { stat: 'frameType', isCorrect: g.frame, value: guessCard.frameType },
+      { stat: 'attribute', isCorrect: g.attribute, value: guessCard.attribute },
+      { stat: 'level', isCorrect: g.level, value: guessCard.validLevels || getValidLevels(guessCard) },
+      { stat: 'race', isCorrect: g.race, value: guessCard.race },
+      { stat: 'atk', isCorrect: g.atk, value: guessCard.atk },
+      { stat: 'def', isCorrect: g.def, value: guessCard.def }
+    ];
+    
+    for (const m of statMappings) {
+      gameHints.push({
+        type: 'guess',
+        stat: m.stat,
+        isCorrect: m.isCorrect,
+        value: m.value
+      });
+    }
+  }
+  
+  candidates = filterCandidatesByHints(allCards, gameHints);
   renderCandidates();
 }
 
@@ -370,6 +384,49 @@ function getEquivalentCards(target) {
     card.atk === target.atk &&
     card.def === target.def
   );
+}
+
+function rebuildGameStateFromHistory() {
+  attempts = 0;
+  hintUseCount = 0;
+  statKeys.forEach(k => revealedHints[k] = false);
+  systemRevealedKeys = [];
+  
+  // Rebuild in chronological order: oldest to newest
+  // history is [latest, ..., oldest]
+  for (let i = history.length - 1; i >= 0; i--) {
+    const row = history[i];
+    if (row.isHint) {
+      revealedHints[row.key] = true;
+      systemRevealedKeys.push(row.key);
+      if (row.hintType === '무작위 힌트') {
+        hintUseCount++;
+      }
+    } else {
+      attempts++;
+      
+      const frameMatch = isFrameMatch(targetCard, row.card.frameType);
+      const attributeMatch = row.card.attribute === targetCard.attribute;
+      const levelMatch = isLevelMatch(targetCard, row.card.validLevels);
+      const raceMatch = row.card.race === targetCard.race || (row.card.race === null && targetCard.race === null);
+      const atkMatch = row.card.atk === targetCard.atk;
+      const defMatch = row.card.def === targetCard.def;
+      
+      if (frameMatch) revealedHints.frameType = true;
+      if (attributeMatch) revealedHints.attribute = true;
+      if (levelMatch) revealedHints.level = true;
+      if (raceMatch) revealedHints.race = true;
+      if (atkMatch) revealedHints.atk = true;
+      if (defMatch) revealedHints.def = true;
+    }
+  }
+  
+  attemptCountEl.textContent = attempts;
+  hintUseCountEl.textContent = hintUseCount;
+  
+  updateHintUI();
+  updateCandidates();
+  renderHistory();
 }
 
 function renderHistory() {
@@ -448,6 +505,32 @@ function renderHistory() {
       tr.appendChild(makeCell(row.card.def, row.def));
     }
     
+    // Action cell (9th column)
+    const actionTd = document.createElement('td');
+    actionTd.style.padding = '0.75rem';
+    actionTd.style.borderBottom = '1px solid var(--accent-blue)';
+    actionTd.style.textAlign = 'center';
+    
+    if (row.isHint && row.hintType === '최초 힌트') {
+      actionTd.textContent = '-';
+      actionTd.style.color = 'var(--text-muted)';
+      actionTd.style.opacity = '0.5';
+    } else {
+      const delBtn = document.createElement('button');
+      delBtn.className = 'btn-delete-history';
+      delBtn.innerHTML = '❌';
+      delBtn.style = 'background: none; border: none; color: #ef4444; cursor: pointer; padding: 0 0.5rem; font-size: 1rem;';
+      delBtn.onclick = () => {
+        const index = history.indexOf(row);
+        if (index > -1) {
+          history.splice(index, 1);
+          rebuildGameStateFromHistory();
+        }
+      };
+      actionTd.appendChild(delBtn);
+    }
+    tr.appendChild(actionTd);
+    
     historyTbody.appendChild(tr);
   });
 }
@@ -512,6 +595,18 @@ restartGameBtn.addEventListener('click', () => {
   victoryModal.style.display = 'none';
   initGame();
 });
+if (undoGuessBtn) {
+  undoGuessBtn.addEventListener('click', () => {
+    if (history.length === 0) return;
+    const latest = history[0];
+    if (latest.isHint && latest.hintType === '최초 힌트') {
+      alert("최초 힌트는 되돌릴 수 없습니다.");
+      return;
+    }
+    history.shift();
+    rebuildGameStateFromHistory();
+  });
+}
 
 async function loadGameDatabase() {
   startGameBtn.disabled = true;

@@ -35,7 +35,10 @@
         <section class="panel input-panel">
           <div class="flex-between" style="border-bottom: 1px solid var(--border); padding-bottom: 0.75rem; margin-bottom: 1.5rem;">
             <h2 style="margin: 0; font-size: 1.25rem; display: flex; align-items: center; gap: 0.5rem;">🔍 정보 입력 및 설정</h2>
-            <button id="resetBtn" class="btn-secondary btn-sm" style="margin: 0; width: auto; padding: 0.4rem 0.8rem;">전체 초기화</button>
+            <div style="display: flex; gap: 0.5rem;">
+              <button id="undoHintBtn" class="btn-secondary btn-sm" style="margin: 0; width: auto; padding: 0.4rem 0.8rem; background: rgba(59, 130, 246, 0.2); border-color: var(--accent-blue);">되돌리기</button>
+              <button id="resetBtn" class="btn-secondary btn-sm" style="margin: 0; width: auto; padding: 0.4rem 0.8rem;">전체 초기화</button>
+            </div>
           </div>
           
           <!-- Database Synchronization Section -->
@@ -61,11 +64,11 @@
             <div class="direct-hint-grid mt-4" style="margin-top: 0.5rem; grid-template-columns: repeat(3, 1fr);">
               <div class="form-group">
                 <label>남은 힌트 수</label>
-                <input type="number" id="hintsLeft" value="1" min="0">
+                <input type="number" id="hintsLeft" value="1">
               </div>
               <div class="form-group">
-                <label>남은 도전 횟수 (총량)</label>
-                <input type="number" id="totalAttemptsLeft" value="3" min="0">
+                <label>남은 도전 횟수</label>
+                <input type="number" id="totalAttemptsLeft" value="3">
               </div>
               <div class="form-group">
                 <label>남은 문제 수</label>
@@ -276,11 +279,11 @@
             </div>
             
             <div id="recContainer" class="hidden mt-4">
-              <h4 style="color: var(--accent-gold); margin-bottom: 0.5rem;">🎯 정답 스나이핑 (후보 중 최적)</h4>
+              <h4 id="snipeHeader" style="color: var(--accent-gold); margin-bottom: 0.5rem; display: inline-block;">🎯 정답 스나이핑 (후보 중 최적)</h4>
               <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1rem;">정답일 가능성이 있으면서 조건에 최적인 카드입니다. 남은 도전 횟수가 적을 때 적극적으로 시도하세요.</p>
               <div id="snipeList" class="card-grid"></div>
               
-              <h4 style="color: #a855f7; margin-top: 1.5rem; margin-bottom: 0.5rem;">🕵️ 극한의 정찰 픽 (오답 확실)</h4>
+              <h4 id="scoutHeader" style="color: #a855f7; margin-top: 1.5rem; margin-bottom: 0.5rem; display: inline-block;">🕵️ 극한의 정찰 픽 (오답 확실)</h4>
               <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1rem;">정답은 아니지만, 현재 후보들의 경우의 수를 가장 효율적으로 좁히는 정보원 카드입니다. 남은 기회가 넉넉할 때 좋습니다.</p>
               <div id="scoutList" class="card-grid"></div>
             </div>
