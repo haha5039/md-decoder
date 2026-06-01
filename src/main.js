@@ -86,34 +86,15 @@ async function initGameData() {
   updateUI();
 }
 
-const frameTypeMap = {
-  normal: 0,
-  effect: 1,
-  fusion: 2,
-  synchro: 3,
-  xyz: 4,
-  link: 5,
-  ritual: 6,
-  normal_pendulum: 7,
-  effect_pendulum: 8,
-  fusion_pendulum: 9,
-  synchro_pendulum: 10,
-  xyz_pendulum: 11
-};
-
 function getMatchProfile(guess, target) {
-  const isFrame = isFrameMatch(target, guess.frameType);
-  const frameEnum = isFrame ? (frameTypeMap[target.frameType.toLowerCase()] ?? 0) : 12;
-  
-  const isLvl = isLevelMatch(target, guess.validLevels);
-  const lvlEnum = isLvl ? (getTargetRulesLevel(target) !== null ? getTargetRulesLevel(target) : 0) : 14;
-  
+  const frameBit = isFrameMatch(target, guess.frameType) ? 1 : 0;
+  const lvlBit = isLevelMatch(target, guess.validLevels) ? 1 : 0;
   const attrBit = (guess.attribute === target.attribute) ? 1 : 0;
   const raceBit = (guess.race === target.race || (guess.race === null && target.race === null)) ? 1 : 0;
   const atkBit = (guess.atk === target.atk) ? 1 : 0;
   const defBit = (guess.def === target.def) ? 1 : 0;
   
-  return frameEnum | (lvlEnum << 4) | (attrBit << 8) | (raceBit << 9) | (atkBit << 10) | (defBit << 11);
+  return frameBit | (lvlBit << 1) | (attrBit << 2) | (raceBit << 3) | (atkBit << 4) | (defBit << 5);
 }
 
 function updateUI() {
@@ -725,7 +706,7 @@ function calculateBestGuesses() {
   const ratio = total / sampleSize;
   const ratioForSquares = total / (sampleSize * sampleSize);
   
-  const buckets = new Int32Array(4096);
+  const buckets = new Int32Array(64);
   
   // We scan ALL 13600+ cards to find the best scouts, regardless of candidate count
   for (let i = 0; i < allCards.length; i++) {
@@ -746,9 +727,9 @@ function calculateBestGuesses() {
     let maxBucket = 0;
     let sizeOneBuckets = 0;
     
-    const winProfile = (frameTypeMap[guess.frameType.toLowerCase()] ?? 0) | ((getTargetRulesLevel(guess) !== null ? getTargetRulesLevel(guess) : 0) << 4) | (15 << 8);
+    const winProfile = 63; // all 6 bits matching (O, O, O, O, O, O)
     
-    for (let k = 0; k < 4096; k++) {
+    for (let k = 0; k < 64; k++) {
       const count = buckets[k];
       if (count > 0) {
         if (k !== winProfile) {
