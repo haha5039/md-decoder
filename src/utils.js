@@ -170,9 +170,13 @@ export function filterCandidatesByHints(cards, hints) {
       let isMatch = false;
       
       if (hint.type === 'direct') {
-        // Direct/system-revealed hints require exact match
+        // Direct/system-revealed hints require exact match (except for UI partial frameType)
         if (hint.stat === 'frameType') {
-          isMatch = (card.frameType === hint.value);
+          if (hint.isExact === false) {
+            isMatch = isFrameMatch(card, hint.value);
+          } else {
+            isMatch = (card.frameType === hint.value);
+          }
         } else if (hint.stat === 'level') {
           isMatch = (getTargetRulesLevel(card) === hint.value);
         } else {

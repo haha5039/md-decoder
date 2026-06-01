@@ -289,7 +289,8 @@ function updateCandidates() {
       type: 'direct',
       stat: key,
       isCorrect: true,
-      value: key === 'level' ? getTargetRulesLevel(targetCard) : targetCard[key]
+      value: key === 'level' ? getTargetRulesLevel(targetCard) : targetCard[key],
+      isExact: true
     });
   }
   

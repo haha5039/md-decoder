@@ -292,7 +292,8 @@ applyDirectHintBtn.addEventListener('click', () => {
           stat: 'def',
           isCorrect: true,
           value: null,
-          batchId: batchId
+          batchId: batchId,
+          isExact: true
         });
         added = true;
         newDirectCount++;
@@ -312,7 +313,8 @@ applyDirectHintBtn.addEventListener('click', () => {
           stat: m.stat,
           isCorrect: true,
           value: m.stat === 'level' || m.stat === 'atk' || m.stat === 'def' ? parseInt(val, 10) : val,
-          batchId: batchId
+          batchId: batchId,
+          isExact: m.stat === 'frameType' ? false : true
         });
         added = true;
         newDirectCount++;
