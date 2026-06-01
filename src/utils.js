@@ -156,3 +156,68 @@ export function renderCardStatsHTML(card) {
   }
 }
 
+/**
+ * Shared candidate filtering function used by both Deduction Helper (main.js) and Play Mode (play.js).
+ * This ensures identical filtering logic across both modes.
+ * 
+ * Each hint is: { type: 'direct'|'guess', stat, isCorrect, value }
+ *   - 'direct': System-revealed / confirmed exact info (uses exact match, getTargetRulesLevel for level)
+ *   - 'guess': Deduced from a card guess (uses isFrameMatch for frame, isLevelMatch for level)
+ */
+export function filterCandidatesByHints(cards, hints) {
+  return cards.filter(card => {
+    for (const hint of hints) {
+      let isMatch = false;
+      
+      if (hint.type === 'direct') {
+        // Direct/system-revealed hints require exact match
+        if (hint.stat === 'frameType') {
+          isMatch = (card.frameType === hint.value);
+        } else if (hint.stat === 'level') {
+          isMatch = (getTargetRulesLevel(card) === hint.value);
+        } else {
+          isMatch = (card[hint.stat] === hint.value);
+        }
+      } else {
+        // Guess type: uses game-rule partial matching for frame and level
+        if (hint.stat === 'frameType') {
+          isMatch = isFrameMatch(card, hint.value);
+        } else if (hint.stat === 'level') {
+          isMatch = isLevelMatch(card, hint.value);
+        } else {
+          isMatch = (card[hint.stat] === hint.value);
+        }
+      }
+      
+      if (hint.isCorrect && !isMatch) return false;
+      if (!hint.isCorrect && isMatch) return false;
+    }
+    return true;
+  });
+}
+
+/**
+ * Maps a Yu-Gi-Oh API card type string to the correct frameType value.
+ * Handles pendulum compound types correctly (e.g., "Pendulum Effect Fusion Monster" → "fusion_pendulum").
+ */
+export function mapFrameType(apiType, fallbackFrameType) {
+  const t = apiType.toLowerCase();
+  const isPendulum = t.includes('pendulum');
+  
+  let base = fallbackFrameType;
+  if (t.includes('fusion')) base = 'fusion';
+  else if (t.includes('synchro')) base = 'synchro';
+  else if (t.includes('xyz')) base = 'xyz';
+  else if (t.includes('link')) base = 'link';
+  else if (t.includes('ritual')) base = 'ritual';
+  else if (t.includes('effect') || t.includes('tuner') || t.includes('flip') || t.includes('spirit') || t.includes('toon') || t.includes('gemini') || t.includes('union')) base = 'effect';
+  else if (t.includes('normal')) base = 'normal';
+  else if (t.includes('spell')) return 'spell';
+  else if (t.includes('trap')) return 'trap';
+  
+  if (isPendulum && base !== 'link') {
+    return base + '_pendulum';
+  }
+  return base;
+}
+

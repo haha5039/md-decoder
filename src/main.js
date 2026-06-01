@@ -1,6 +1,6 @@
 import './style.css'
 import { allCards as rawCards } from './cards_data.js'
-import { isFrameMatch, isLevelMatch, getValidLevels, renderCardStatsHTML, translateAttribute, translateFrame, translateRace, getTargetRulesLevel } from './utils.js'
+import { isFrameMatch, isLevelMatch, getValidLevels, renderCardStatsHTML, translateAttribute, translateFrame, translateRace, getTargetRulesLevel, filterCandidatesByHints, mapFrameType } from './utils.js'
 
 import { getCachedCards, saveCachedCards } from './db.js'
 
@@ -495,34 +495,7 @@ applyGuessBtn.addEventListener('click', () => {
 // FILTERING
 // ------------------------------------------------------------------
 function applyFilters() {
-  candidates = allCards.filter(card => {
-    for (let hint of hints) {
-      let isMatch = false;
-      
-      if (hint.type === 'direct') {
-        if (hint.stat === 'frameType') {
-          isMatch = (card.frameType === hint.value);
-        } else if (hint.stat === 'level') {
-          isMatch = (getTargetRulesLevel(card) === hint.value);
-        } else {
-          isMatch = (card[hint.stat] === hint.value);
-        }
-      } else {
-        // Guess type
-        if (hint.stat === 'frameType') {
-          isMatch = isFrameMatch(card, hint.value);
-        } else if (hint.stat === 'level') {
-          isMatch = isLevelMatch(card, hint.value);
-        } else {
-          isMatch = (card[hint.stat] === hint.value);
-        }
-      }
-      
-      if (hint.isCorrect && !isMatch) return false;
-      if (!hint.isCorrect && isMatch) return false;
-    }
-    return true;
-  });
+  candidates = filterCandidatesByHints(allCards, hints);
   
   calculatedResults = null;
   updateUI();
@@ -978,19 +951,8 @@ if (updateDbBtn) {
         const ko = koMap.get(en.id);
         let koName = ko ? ko.name : en.name;
         
-        // Simple helper for frame type mapping
-        let frameType = en.frameType;
-        const type = en.type.toLowerCase();
-        if (type.includes('spell')) frameType = 'spell';
-        else if (type.includes('trap')) frameType = 'trap';
-        else if (type.includes('fusion')) frameType = 'fusion';
-        else if (type.includes('synchro')) frameType = 'synchro';
-        else if (type.includes('xyz')) frameType = 'xyz';
-        else if (type.includes('link')) frameType = 'link';
-        else if (type.includes('ritual')) frameType = 'ritual';
-        else if (type.includes('pendulum')) frameType = 'pendulum';
-        else if (type.includes('effect')) frameType = 'effect';
-        else if (type.includes('normal')) frameType = 'normal';
+        // Map frame type correctly (handles pendulum compound types)
+        let frameType = mapFrameType(en.type, en.frameType);
         
         finalCards.push({
           id: en.id,

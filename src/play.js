@@ -1,6 +1,6 @@
 import './style.css';
 import { allCards as rawCards } from './cards_data.js';
-import { isFrameMatch, isLevelMatch, getValidLevels, renderCardStatsHTML, translateAttribute, translateFrame, translateRace, getTargetRulesLevel } from './utils.js';
+import { isFrameMatch, isLevelMatch, getValidLevels, renderCardStatsHTML, translateAttribute, translateFrame, translateRace, getTargetRulesLevel, filterCandidatesByHints } from './utils.js';
 import { getCachedCards } from './db.js';
 
 let allCards = [];
@@ -280,34 +280,44 @@ function submitGuess(guessCard) {
 }
 
 function updateCandidates() {
-  candidates = allCards.filter(card => {
-    // 1. Check against revealed hints (must match target exactly since properties are revealed)
-    if (revealedHints.frameType && card.frameType !== targetCard.frameType) return false;
-    if (revealedHints.level && getTargetRulesLevel(card) !== getTargetRulesLevel(targetCard)) return false;
-    if (revealedHints.attribute && card.attribute !== targetCard.attribute) return false;
-    if (revealedHints.race && card.race !== targetCard.race) return false;
-    if (revealedHints.atk && card.atk !== targetCard.atk) return false;
-    if (revealedHints.def && card.def !== targetCard.def) return false;
-    
-    // 2. Check against guess history (decoder logic)
-    for (let i = 0; i < history.length; i++) {
-      const g = history[i];
-      if (g.isHint) continue;
-      // A candidate must yield the EXACT same O/X result against the guessed card as the target card did
-      if (isFrameMatch(card, g.card.frameType) !== g.frame) return false;
-      if ((card.attribute === g.card.attribute) !== g.attribute) return false;
-      if (isLevelMatch(card, g.card.validLevels) !== g.level) return false;
-      
-      const raceMatch = card.race === g.card.race || (card.race === null && g.card.race === null);
-      if (raceMatch !== g.race) return false;
-      
-      if ((card.atk === g.card.atk) !== g.atk) return false;
-      if ((card.def === g.card.def) !== g.def) return false;
-    }
-    
-    return true;
-  });
+  // Build a unified hints array from the game state, using the same format as main.js
+  const gameHints = [];
   
+  // 1. System-revealed hints → 'direct' type (exact match with target)
+  for (const key of systemRevealedKeys) {
+    gameHints.push({
+      type: 'direct',
+      stat: key,
+      isCorrect: true,
+      value: key === 'level' ? getTargetRulesLevel(targetCard) : targetCard[key]
+    });
+  }
+  
+  // 2. Guess history → 'guess' type (game-rule partial matching)
+  for (const g of history) {
+    if (g.isHint) continue;
+    
+    const guessCard = g.card;
+    const statMappings = [
+      { stat: 'frameType', isCorrect: g.frame, value: guessCard.frameType },
+      { stat: 'attribute', isCorrect: g.attribute, value: guessCard.attribute },
+      { stat: 'level', isCorrect: g.level, value: guessCard.validLevels || getValidLevels(guessCard) },
+      { stat: 'race', isCorrect: g.race, value: guessCard.race },
+      { stat: 'atk', isCorrect: g.atk, value: guessCard.atk },
+      { stat: 'def', isCorrect: g.def, value: guessCard.def }
+    ];
+    
+    for (const m of statMappings) {
+      gameHints.push({
+        type: 'guess',
+        stat: m.stat,
+        isCorrect: m.isCorrect,
+        value: m.value
+      });
+    }
+  }
+  
+  candidates = filterCandidatesByHints(allCards, gameHints);
   renderCandidates();
 }
 
