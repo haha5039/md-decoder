@@ -13,32 +13,19 @@ export function isFrameMatch(card, frameToMatch) {
   return parts1.some(p => parts2.includes(p));
 }
 
+// Printed zero and rules values both match; only the rules value is revealed.
+const RULE_LEVELS = new Map([
+  [1686814, 12], [90884403, 12],
+  [65305468, 1], [43490025, 1], [26973555, 1], [41522092, 1], [52653092, 1]
+]);
+
 export function getValidLevels(card) {
-  const levels = [];
-  
-  if (card.level !== null && card.level !== undefined) {
-    levels.push(parseInt(card.level, 10));
-  } else if (card.frameType !== 'link') {
-    levels.push(0);
-  }
-  
-  // Special rule for cards treated as level 12 or 1
-  if (card.id === 1686814) levels.push(12); // Tzolkin
-  if (card.id === 90884403) levels.push(12); // Bishbaalkin
-  if (card.id === 65301952 || card.id === 65305468) levels.push(1); // FNo.0 (all artworks)
-  if (card.id === 43490025) levels.push(1); // FNo.0 Slash
-  if (card.id === 26505081) levels.push(1); // FNo.0 Draco
-  if (card.id === 52653092) levels.push(1); // SNo.0 / Number F0 Zexal
-  
-  return [...new Set(levels)];
+  const printed = card.level ?? (RULE_LEVELS.has(card.id) ? 0 : null);
+  return [...new Set([printed, RULE_LEVELS.get(card.id)].filter(Number.isInteger))];
 }
 
 export function getTargetRulesLevel(card) {
-  if (!card) return null;
-  // Special rule for cards treated as level 12 or 1
-  if (card.id === 1686814 || card.id === 90884403) return 12; // Tzolkin, Bishbaalkin
-  if (card.id === 65301952 || card.id === 65305468 || card.id === 43490025 || card.id === 26505081 || card.id === 52653092) return 1; // FNo.0 cards, SNo.0
-  return card.level;
+  return card ? (RULE_LEVELS.get(card.id) ?? card.level) : null;
 }
 
 export function isLevelMatch(card, levelsToMatch) {
@@ -86,6 +73,7 @@ export function translateFrame(frame) {
     fusion_pendulum: '융합 펜듈럼',
     synchro_pendulum: '싱크로 펜듈럼',
     xyz_pendulum: '엑시즈 펜듈럼',
+    ritual_pendulum: '의식 펜듈럼',
     spell: '마법',
     trap: '함정'
   };
@@ -132,24 +120,24 @@ export function renderCardStatsHTML(card) {
     return `
       <div class="search-dropdown-stats">
         <span class="stat-badge frame-${card.frameType}">${typeKR}</span>
-        <span class="stat-badge race">${subType}</span>
+        <span class="stat-badge race">${escapeHTML(subType)}</span>
       </div>
     `;
   } else {
     const frameKR = translateFrame(card.frameType);
-    const levelLabel = card.frameType === 'link' ? 'Lnk' : (card.frameType === 'xyz' ? 'Rk' : 'Lv');
-    const lvText = card.level !== null && card.level !== undefined ? `${levelLabel}.${card.level}` : '';
+    const levelLabel = card.frameType === 'link' ? 'Lnk' : (card.frameType.startsWith('xyz') ? 'Rk' : 'Lv');
+    const lvText = getTargetRulesLevel(card) != null ? `${levelLabel}.${getTargetRulesLevel(card)}` : '';
     const attrText = translateAttribute(card.attribute) || '';
     const raceText = translateRace(card.race) || '';
-    const atkText = card.atk !== null && card.atk !== undefined ? card.atk : '?';
-    const defText = card.def !== null && card.def !== undefined ? card.def : '?';
+    const atkText = formatStat(card.atk);
+    const defText = formatStat(card.def);
     
     return `
       <div class="search-dropdown-stats">
-        <span class="stat-badge frame-${card.frameType.toLowerCase().replace('_pendulum', '')}">${frameKR}</span>
+        <span class="stat-badge frame-${card.frameType.toLowerCase().replace('_pendulum', '')}">${escapeHTML(frameKR)}</span>
         ${lvText ? `<span class="stat-badge level">${lvText}</span>` : ''}
-        ${attrText ? `<span class="stat-badge attr">${attrText}</span>` : ''}
-        ${raceText ? `<span class="stat-badge race">${raceText}</span>` : ''}
+        ${attrText ? `<span class="stat-badge attr">${escapeHTML(attrText)}</span>` : ''}
+        ${raceText ? `<span class="stat-badge race">${escapeHTML(raceText)}</span>` : ''}
         <span class="stat-badge atk-def">⚔️ ${atkText} / 🛡️ ${defText}</span>
       </div>
     `;
@@ -170,13 +158,9 @@ export function filterCandidatesByHints(cards, hints) {
       let isMatch = false;
       
       if (hint.type === 'direct') {
-        // Direct/system-revealed hints require exact match (except for UI partial frameType)
+        // Revealed values describe the target exactly; partial matches apply only to guesses.
         if (hint.stat === 'frameType') {
-          if (hint.isExact === false) {
-            isMatch = isFrameMatch(card, hint.value);
-          } else {
-            isMatch = (card.frameType === hint.value);
-          }
+          isMatch = (card.frameType === hint.value);
         } else if (hint.stat === 'level') {
           isMatch = (getTargetRulesLevel(card) === hint.value);
         } else {
@@ -205,7 +189,9 @@ export function filterCandidatesByHints(cards, hints) {
  * Handles pendulum compound types correctly (e.g., "Pendulum Effect Fusion Monster" → "fusion_pendulum").
  */
 export function mapFrameType(apiType, fallbackFrameType) {
-  const t = apiType.toLowerCase();
+  // The API frame is authoritative: type labels can omit Pendulum or mislabel Normal Tuners.
+  if (fallbackFrameType) return fallbackFrameType.toLowerCase();
+  const t = (apiType || '').toLowerCase();
   const isPendulum = t.includes('pendulum');
   
   let base = fallbackFrameType;
@@ -214,8 +200,8 @@ export function mapFrameType(apiType, fallbackFrameType) {
   else if (t.includes('xyz')) base = 'xyz';
   else if (t.includes('link')) base = 'link';
   else if (t.includes('ritual')) base = 'ritual';
-  else if (t.includes('effect') || t.includes('tuner') || t.includes('flip') || t.includes('spirit') || t.includes('toon') || t.includes('gemini') || t.includes('union')) base = 'effect';
   else if (t.includes('normal')) base = 'normal';
+  else if (t.includes('effect') || t.includes('tuner') || t.includes('flip') || t.includes('spirit') || t.includes('toon') || t.includes('gemini') || t.includes('union')) base = 'effect';
   else if (t.includes('spell')) return 'spell';
   else if (t.includes('trap')) return 'trap';
   
@@ -225,3 +211,39 @@ export function mapFrameType(apiType, fallbackFrameType) {
   return base;
 }
 
+export const STAT_KEYS = ['frameType', 'level', 'attribute', 'race', 'atk', 'def'];
+
+export function getRevealedValue(card, stat) {
+  return stat === 'level' ? getTargetRulesLevel(card) : card[stat];
+}
+
+export function getGuessFeedback(guess, target) {
+  const matches = Object.fromEntries(STAT_KEYS.map(stat => [stat,
+    stat === 'frameType' ? isFrameMatch(target, guess.frameType) :
+    stat === 'level' ? isLevelMatch(target, getValidLevels(guess)) : guess[stat] === target[stat]
+  ]));
+  return {
+    matches,
+    won: STAT_KEYS.every(stat => matches[stat]),
+    revealed: Object.fromEntries(STAT_KEYS.filter(stat => matches[stat]).map(stat => [stat, getRevealedValue(target, stat)]))
+  };
+}
+
+export function hintsFromFeedback(guess, feedback, batchId) {
+  const hints = STAT_KEYS.map(stat => ({
+    type: 'guess', stat, value: stat === 'level' ? getValidLevels(guess) : guess[stat],
+    isCorrect: feedback.matches[stat], cardId: guess.id, cardName: guess.name, batchId
+  }));
+  for (const [stat, value] of Object.entries(feedback.revealed)) {
+    hints.push({ type: 'direct', stat, value, isCorrect: true, source: 'reveal', batchId, hintCost: 0 });
+  }
+  return hints;
+}
+
+export function escapeHTML(value) {
+  return String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+}
+
+export function formatStat(value) {
+  return value === -1 ? '?' : value === null || value === undefined ? '—' : String(value);
+}

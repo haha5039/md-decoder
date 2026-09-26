@@ -1,10 +1,24 @@
 import './style.css'
 import { allCards as rawCards } from './cards_data.js'
-import { isFrameMatch, isLevelMatch, getValidLevels, renderCardStatsHTML, translateAttribute, translateFrame, translateRace, getTargetRulesLevel, filterCandidatesByHints, mapFrameType } from './utils.js'
+import { getValidLevels, renderCardStatsHTML, translateAttribute, translateFrame, translateRace, getTargetRulesLevel, filterCandidatesByHints, escapeHTML, formatStat } from './utils.js'
 
-import { getCachedCards, saveCachedCards } from './db.js'
+import { sortScores, TWO_TURN_LIMIT, chooseCriteria } from './solver.js';
+import { normalizeCards, fetchCardData } from './data.js';
+import { budget, createBatchId, inferRevealedValues, parseStatInput, removeInputBatch, saveSession, restoreSession, hasSolvedGuess } from './session.js';
+
+import { getCachedCards, saveCachedCards, clearCachedCards } from './db.js'
 
 let allCards = [];
+
+const initialStrategyHTML = `
+  <div style="background: rgba(59, 130, 246, 0.05); border: 1px dashed rgba(59, 130, 246, 0.3); padding: 1rem; border-radius: 8px; font-size: 0.85rem; line-height: 1.5; color: var(--text-muted); display: flex; align-items: center; gap: 0.75rem;">
+    <span style="font-size: 1.5rem; flex-shrink: 0;">⚡</span>
+    <div>
+      <strong style="color: #60a5fa; display: block; margin-bottom: 0.2rem;">실시간 전략 추천 준비 완료</strong>
+      현재 단서들을 기반으로 최적의 판단을 내릴 수 있습니다. 우측 상단의 <strong>[최적의 카드 계산]</strong> 버튼을 클릭하여 추천 정답 스나이핑 카드와 극한의 정찰 카드를 확인하세요.
+    </div>
+  </div>
+`;
 
 // State
 let candidates = [];
@@ -12,6 +26,9 @@ let hints = []; // Array of { type: 'guess'|'direct', stat, isCorrect, value, ca
 let selectedCard = null;
 let calculatedResults = null;
 let activeCriteria = 'entropy';
+let solverWorker = null;
+let calculationId = 0;
+let candidateLimit = 48;
 
 // DOM Elements
 const searchInput = document.getElementById('cardSearch');
@@ -55,9 +72,12 @@ const applyDirectHintBtn = document.getElementById('applyDirectHintBtn');
 // Database Sync Elements
 const dbStatusText = document.getElementById('dbStatusText');
 const updateDbBtn = document.getElementById('updateDbBtn');
+const clearDbBtn = document.getElementById('clearDbBtn');
 const updateProgressContainer = document.getElementById('updateProgressContainer');
 const updateProgressBar = document.getElementById('updateProgressBar');
 const updateProgressText = document.getElementById('updateProgressText');
+
+// Database Sync Elements
 
 async function initGameData() {
   try {
@@ -65,16 +85,31 @@ async function initGameData() {
     if (cached && cached.length > 0) {
       allCards = cached.filter(c => c.frameType !== 'spell' && c.frameType !== 'trap');
       if (dbStatusText) dbStatusText.textContent = '현재: 사용자 업데이트 데이터 사용 중';
+      if (dbStatusBadge) {
+        dbStatusBadge.textContent = '최신 DB';
+        dbStatusBadge.style.background = 'rgba(34, 197, 94, 0.15)';
+        dbStatusBadge.style.color = '#4ade80';
+      }
       console.log(`Loaded ${allCards.length} cards from IndexedDB.`);
     } else {
       allCards = rawCards.filter(c => c.frameType !== 'spell' && c.frameType !== 'trap');
       if (dbStatusText) dbStatusText.textContent = '현재: 내장 데이터 사용 중';
+      if (dbStatusBadge) {
+        dbStatusBadge.textContent = '내장 DB';
+        dbStatusBadge.style.background = 'rgba(59, 130, 246, 0.15)';
+        dbStatusBadge.style.color = '#60a5fa';
+      }
       console.log(`Loaded ${allCards.length} cards from static cards_data.js.`);
     }
   } catch (err) {
     console.error("Failed to load IndexedDB cache, fallback to static:", err);
     allCards = rawCards.filter(c => c.frameType !== 'spell' && c.frameType !== 'trap');
     if (dbStatusText) dbStatusText.textContent = '현재: 내장 데이터 사용 중 (오류)';
+    if (dbStatusBadge) {
+      dbStatusBadge.textContent = '내장 DB (오류)';
+      dbStatusBadge.style.background = 'rgba(239, 68, 68, 0.15)';
+      dbStatusBadge.style.color = '#f87171';
+    }
   }
 
   // Pre-calculate valid levels for all cards for maximum performance
@@ -82,25 +117,21 @@ async function initGameData() {
     card.validLevels = getValidLevels(card);
   });
 
-  candidates = [...allCards];
-  updateUI();
-}
-
-function getMatchProfile(guess, target) {
-  const frameBit = isFrameMatch(target, guess.frameType) ? 1 : 0;
-  const lvlBit = isLevelMatch(target, guess.validLevels) ? 1 : 0;
-  const attrBit = (guess.attribute === target.attribute) ? 1 : 0;
-  const raceBit = (guess.race === target.race || (guess.race === null && target.race === null)) ? 1 : 0;
-  const atkBit = (guess.atk === target.atk) ? 1 : 0;
-  const defBit = (guess.def === target.def) ? 1 : 0;
-  
-  return frameBit | (lvlBit << 1) | (attrBit << 2) | (raceBit << 3) | (atkBit << 4) | (defBit << 5);
+  let saved = null;
+  try { saved = restoreSession(localStorage, allCards); } catch { /* Storage can be disabled by the browser. */ }
+  if (saved) {
+    hints = inferRevealedValues(saved.hints, allCards);
+    totalAttemptsLeft.value = saved.attempts;
+    hintsLeft.value = saved.remainingHints;
+    problemsLeft.value = saved.problems;
+    document.getElementById('sessionStatus').textContent = '이전 추론을 복원했습니다.';
+  }
+  applyFilters();
 }
 
 function updateUI() {
   candidatesCount.textContent = `${candidates.length}장 / ${allCards.length}장`;
-  visibleCandidatesCount.textContent = Math.min(candidates.length, 50);
-  renderCandidateList(candidates.slice(0, 50), candidateList);
+  renderCandidatePage();
   
   if (hints.length > 0) {
     appliedHintsContainer.classList.remove('hidden');
@@ -115,10 +146,30 @@ function renderCandidateList(list, container) {
   list.forEach(card => {
     const div = document.createElement('div');
     div.className = 'card-item animate-fade-in';
-    const imgUrl = card.image_url || 'https://images.ygoprodeck.com/images/cards/80181649.jpg';
+    const imgUrl = escapeHTML(card.image_url || '');
+
+    const levelLabel = card.frameType === 'link' ? 'Lnk' : (card.frameType.startsWith('xyz') ? 'Rk' : 'Lv');
+    const lvText = getTargetRulesLevel(card) != null ? `${levelLabel}.${getTargetRulesLevel(card)}` : '';
+    const attrText = translateAttribute(card.attribute) || '';
+    const atkText = formatStat(card.atk);
+    const defText = formatStat(card.def);
+
     div.innerHTML = `
-      <img src="${imgUrl}" alt="${card.name}" loading="lazy">
-      <div class="card-item-title" title="${card.name}">${card.name}</div>
+      <img src="${imgUrl}" alt="${escapeHTML(card.name)}" loading="lazy" onerror="this.onerror=null;this.style.visibility='hidden'">
+      <div class="card-item-title" title="${escapeHTML(card.name)}">${escapeHTML(card.name)}</div>
+      <div class="candidate-stats">
+        <div class="candidate-stats-row">
+          <span class="stat-badge frame-${card.frameType.toLowerCase().replace('_pendulum', '')}" style="font-size: 0.65rem; padding: 0.1rem 0.35rem;">${escapeHTML(translateFrame(card.frameType))}</span>
+        </div>
+        <div class="candidate-stats-row">
+          ${attrText ? `<span class="stat-badge attr" style="font-size: 0.65rem; padding: 0.1rem 0.35rem;">${escapeHTML(attrText)}</span>` : ''}
+          ${lvText ? `<span class="stat-badge level" style="font-size: 0.65rem; padding: 0.1rem 0.35rem;">${lvText}</span>` : ''}
+        </div>
+        <div class="candidate-stats-row">
+          <span class="stat-badge race" style="font-size: 0.65rem; padding: 0.1rem 0.35rem;">${escapeHTML(translateRace(card.race) || '-')}</span>
+        </div>
+        <div class="candidate-stats-atkdef">⚔️ ${atkText} / 🛡️ ${defText}</div>
+      </div>
     `;
     div.onclick = () => selectCard(card);
     container.appendChild(div);
@@ -135,6 +186,7 @@ function getStatNameKR(stat) {
 
 function getTranslatedValue(stat, value) {
   if (stat === 'def' && value === null) return '없음';
+  if (value === -1) return '?';
   if (value === null || value === undefined) return '?';
   if (Array.isArray(value)) {
     return value.map(val => {
@@ -150,54 +202,47 @@ function getTranslatedValue(stat, value) {
   return value;
 }
 
+function showInputMessage(message) {
+  const notice = document.getElementById('inputNotice');
+  notice.textContent = message;
+  notice.hidden = !message;
+  if (message) notice.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function persistSession() {
+  try {
+    const ok = saveSession(localStorage, { hints, attempts: budget(totalAttemptsLeft.value), remainingHints: budget(hintsLeft.value), problems: budget(problemsLeft.value, 1) });
+    document.getElementById('sessionStatus').textContent = ok ? '추론 내용은 이 브라우저에 자동 저장됩니다.' : '저장 공간을 사용할 수 없어 새로고침하면 추론이 사라집니다.';
+  } catch { document.getElementById('sessionStatus').textContent = '브라우저 저장소를 사용할 수 없습니다.'; }
+}
+
 function deleteHintItem(index) {
-  const targetHint = hints[index];
-  if (!targetHint) return;
-  
-  if (targetHint.type === 'direct') {
-    const directHints = hints.filter(h => h.type === 'direct');
-    if (directHints.length > 1) {
-      hintsLeft.value = (parseInt(hintsLeft.value, 10) || 0) + 1;
-    }
-    hints.splice(index, 1);
-  } else {
-    const batchId = targetHint.batchId;
-    hints.splice(index, 1);
-    const batchExists = hints.some(h => h.batchId === batchId);
-    if (!batchExists) {
-      totalAttemptsLeft.value = (parseInt(totalAttemptsLeft.value, 10) || 0) + 1;
-    }
-  }
+  const hint = hints[index];
+  if (!hint) return;
+  const removed = removeInputBatch(hints, hint.batchId);
+  hints = removed.hints;
+  totalAttemptsLeft.value = budget(totalAttemptsLeft.value) + removed.attemptsRefund;
+  hintsLeft.value = budget(hintsLeft.value) + removed.hintsRefund;
   applyFilters();
 }
 
-function undoLastInput() {
-  if (hints.length === 0) return;
-  
-  const lastHint = hints[hints.length - 1];
-  const lastBatchId = lastHint.batchId;
-  const batchHints = hints.filter(h => h.batchId === lastBatchId);
-  const batchType = lastHint.type;
-  
-  if (batchType === 'direct') {
-    const directCountBefore = hints.filter(h => h.type === 'direct').length;
-    const newDirectCount = batchHints.length;
-    const paidBefore = Math.max(0, directCountBefore - 1);
-    const paidAfter = Math.max(0, directCountBefore - newDirectCount - 1);
-    const refund = paidBefore - paidAfter;
-    
-    hintsLeft.value = (parseInt(hintsLeft.value, 10) || 0) + refund;
-  } else {
-    totalAttemptsLeft.value = (parseInt(totalAttemptsLeft.value, 10) || 0) + 1;
-  }
-  
-  hints = hints.filter(h => h.batchId !== lastBatchId);
-  applyFilters();
+function undoLastInput() { if (hints.length) deleteHintItem(hints.length - 1); }
+
+function renderCandidatePage() {
+  const query = document.getElementById('candidateSearch').value.trim().toLowerCase();
+  const list = candidates.filter(card => !query || card.name.toLowerCase().includes(query) || card.nameEn?.toLowerCase().includes(query));
+  visibleCandidatesCount.textContent = Math.min(list.length, candidateLimit);
+  renderCandidateList(list.slice(0, candidateLimit), candidateList);
+  document.getElementById('showMoreCandidates').hidden = list.length <= candidateLimit;
+  const notice = document.getElementById('candidateNotice');
+  notice.hidden = candidates.length > 0;
+  notice.textContent = '조건을 모두 만족하는 카드가 없습니다. 입력한 O/X와 공개 값을 확인하거나 최근 입력을 취소하세요. 데이터에 없는 카드일 수도 있습니다.';
 }
 
 function renderHints() {
   appliedHintsList.innerHTML = '';
   hints.forEach((hint, index) => {
+    if (hint.inferred) return;
     const li = document.createElement('li');
     li.style.display = 'flex';
     li.style.justifyContent = 'space-between';
@@ -208,7 +253,7 @@ function renderHints() {
       hintContent = `
         <span>
           <span class="stat-name">[확실한 힌트]</span> 
-          ${getStatNameKR(hint.stat)}: <span class="stat-val">${getTranslatedValue(hint.stat, hint.value)}</span>
+          ${getStatNameKR(hint.stat)}: <span class="stat-val">${escapeHTML(getTranslatedValue(hint.stat, hint.value))}</span>
         </span>
         <div style="display: flex; align-items: center; gap: 0.5rem;">
           <span class="stat-res res-correct">적용됨</span>
@@ -219,8 +264,8 @@ function renderHints() {
       const resText = hint.isCorrect ? 'O' : 'X';
       hintContent = `
         <span>
-          <span class="stat-name">[${hint.cardName}]</span> 
-          ${getStatNameKR(hint.stat)}: <span class="stat-val">${getTranslatedValue(hint.stat, hint.value)}</span>
+          <span class="stat-name">[${escapeHTML(hint.cardName)}]</span>
+          ${getStatNameKR(hint.stat)}: <span class="stat-val">${escapeHTML(getTranslatedValue(hint.stat, hint.value))}</span>
         </span>
         <div style="display: flex; align-items: center; gap: 0.5rem;">
           <span class="stat-res ${resClass}">${resText}</span>
@@ -233,6 +278,8 @@ function renderHints() {
     deleteBtn.className = 'btn-delete-hint';
     deleteBtn.innerHTML = '❌';
     deleteBtn.style = 'background: none; border: none; color: #ef4444; cursor: pointer; padding: 0 0.5rem; font-size: 1rem;';
+    deleteBtn.title = '이 도전 또는 정보 입력 묶음 전체 취소';
+    deleteBtn.setAttribute('aria-label', '이 입력 묶음 취소');
     deleteBtn.onclick = () => deleteHintItem(index);
     
     const actionDiv = li.querySelector('div');
@@ -248,77 +295,30 @@ function renderHints() {
 // DIRECT HINT LOGIC
 // ------------------------------------------------------------------
 applyDirectHintBtn.addEventListener('click', () => {
-  const mapping = [
-    { stat: 'frameType', el: directFrame },
-    { stat: 'attribute', el: directAttribute },
-    { stat: 'level', el: directLevel },
-    { stat: 'race', el: directRace },
-    { stat: 'atk', el: directAtk },
-    { stat: 'def', el: directDef }
-  ];
-  
-  let added = false;
-  const isDefNone = directDefNone ? directDefNone.checked : false;
-  
-  const directCountBefore = hints.filter(h => h.type === 'direct').length;
-  let newDirectCount = 0;
-  const batchId = 'direct_' + Date.now();
-  
-  mapping.forEach(m => {
-    if (m.stat === 'def' && isDefNone) {
-      const exists = hints.some(h => h.type === 'direct' && h.stat === 'def');
-      if (!exists) {
-        hints.push({
-          type: 'direct',
-          stat: 'def',
-          isCorrect: true,
-          value: null,
-          batchId: batchId,
-          isExact: true
-        });
-        added = true;
-        newDirectCount++;
+  if (!allCards.length) return;
+  const fields = [['frameType', directFrame], ['attribute', directAttribute], ['level', directLevel], ['race', directRace], ['atk', directAtk], ['def', directDef]];
+  const batchId = createBatchId('direct');
+  const additions = [];
+  try {
+    for (const [stat, input] of fields) {
+      const value = stat === 'def' && directDefNone.checked ? null : parseStatInput(input.value, stat);
+      if (value === undefined) continue;
+      const existing = hints.find(hint => hint.type === 'direct' && hint.stat === stat);
+      if (existing) {
+        if (existing.value !== value) throw new Error(`${getStatNameKR(stat)}에 이미 다른 공개 값이 있습니다. 기존 입력을 취소한 뒤 수정하세요.`);
+        continue;
       }
-      m.el.value = "";
-      directDefNone.checked = false;
-      m.el.disabled = false;
+      additions.push({ type: 'direct', stat, value, isCorrect: true, isExact: true, batchId });
+    }
+    if (!additions.length) {
+      showInputMessage('선택한 정보는 이미 적용되어 있습니다.');
       return;
     }
-    
-    const val = m.el.value.trim();
-    if (val !== "") {
-      const exists = hints.some(h => h.type === 'direct' && h.stat === m.stat);
-      if (!exists) {
-        hints.push({
-          type: 'direct',
-          stat: m.stat,
-          isCorrect: true,
-          value: m.stat === 'level' || m.stat === 'atk' || m.stat === 'def' ? parseInt(val, 10) : val,
-          batchId: batchId,
-          isExact: m.stat === 'frameType' ? false : true
-        });
-        added = true;
-        newDirectCount++;
-      }
-      m.el.value = "";
-    }
-  });
-  
-  if (added) {
-    const paidInBatch = Math.max(0, newDirectCount - (directCountBefore === 0 ? 1 : 0));
-    if (paidInBatch > 0) {
-      hintsLeft.value = (parseInt(hintsLeft.value, 10) || 0) - paidInBatch;
-    }
-    
+    hints.push(...additions);
+    fields.forEach(([, input]) => { input.value = ''; });
+    directDefNone.checked = false; directDef.disabled = false;
     applyFilters();
-    
-    const target = document.querySelector('.results-panel');
-    if (target) {
-      setTimeout(() => {
-        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }, 150);
-    }
-  }
+  } catch (error) { showInputMessage(error.message); }
 });
 
 if (directDefNone) {
@@ -354,14 +354,14 @@ searchInput.addEventListener('input', (e) => {
       const div = document.createElement('div');
       div.className = 'dropdown-item';
       
-      const imgUrl = card.image_url ? card.image_url.replace('.jpg', '_small.jpg') : '';
+      const imgUrl = escapeHTML(card.image_url || '');
       const statsHTML = renderCardStatsHTML(card);
       
       div.innerHTML = `
-        <img src="${imgUrl}" alt="${card.name}" onerror="this.src='${card.image_url || ''}'">
+        <img src="${imgUrl}" alt="${escapeHTML(card.name)}" onerror="this.onerror=null;this.style.visibility='hidden'">
         <div class="search-dropdown-info">
-          <div class="search-dropdown-title">${card.name}</div>
-          <div class="search-dropdown-subtitle">${card.nameEn || ''}</div>
+          <div class="search-dropdown-title">${escapeHTML(card.name)}</div>
+          <div class="search-dropdown-subtitle">${escapeHTML(card.nameEn || '')}</div>
           ${statsHTML}
         </div>
       `;
@@ -385,19 +385,35 @@ document.addEventListener('click', (e) => {
 });
 
 function selectCard(card) {
+  showInputMessage('');
+
   selectedCard = card;
   selectedCardContainer.classList.remove('hidden');
   selectedCardImg.src = card.image_url || '';
   infoName.textContent = card.name;
   
-  const levelText = card.level !== null ? `Lv/Rk/Lk: ${card.level}` : '';
-  const atkDefText = (card.atk !== null ? `ATK: ${card.atk}` : '') + (card.def !== null ? ` / DEF: ${card.def}` : '');
+  const levelLabel = card.frameType === 'link' ? 'Lnk' : (card.frameType.startsWith('xyz') ? 'Rk' : 'Lv');
+  const lvText = getTargetRulesLevel(card) != null ? `${levelLabel}.${getTargetRulesLevel(card)}` : '';
+  const atkText = formatStat(card.atk);
+  const defText = formatStat(card.def);
   
   const frameText = translateFrame(card.frameType) || '';
   const attrText = translateAttribute(card.attribute) || '';
   const raceText = translateRace(card.race) || '';
   
-  infoDetails.innerHTML = `${frameText} | ${attrText} | ${raceText}<br>${levelText}<br>${atkDefText}`;
+  infoDetails.innerHTML = `
+    <div class="candidate-stats" style="margin-top: 0.35rem; text-align: left; align-items: flex-start; gap: 0.35rem;">
+      <div style="display: flex; gap: 0.35rem; flex-wrap: wrap;">
+        <span class="stat-badge frame-${card.frameType.toLowerCase().replace('_pendulum', '')}" style="font-size: 0.72rem; padding: 0.15rem 0.45rem;">${escapeHTML(frameText)}</span>
+        ${attrText ? `<span class="stat-badge attr" style="font-size: 0.72rem; padding: 0.15rem 0.45rem;">${escapeHTML(attrText)}</span>` : ''}
+        ${lvText ? `<span class="stat-badge level" style="font-size: 0.72rem; padding: 0.15rem 0.45rem;">${lvText}</span>` : ''}
+      </div>
+      <div style="display: flex; gap: 0.45rem; align-items: center; flex-wrap: wrap; margin-top: 0.1rem;">
+        ${raceText ? `<span class="stat-badge race" style="font-size: 0.72rem; padding: 0.15rem 0.45rem;">${escapeHTML(raceText)}</span>` : ''}
+        <span class="candidate-stats-atkdef" style="font-size: 0.75rem; color: var(--accent-gold); font-weight: 600; text-align: left; margin-left: 0.1rem;">⚔️ ${atkText} / 🛡️ ${defText}</span>
+      </div>
+    </div>
+  `;
   
   statusToggles.forEach(btn => {
     btn.classList.remove('active');
@@ -427,10 +443,12 @@ statusToggles.forEach(btn => {
 
 applyGuessBtn.addEventListener('click', () => {
   if (!selectedCard) return;
+  if (hints.some(hint => hint.type === 'guess' && hint.cardId === selectedCard.id)) { showInputMessage('이미 기록한 카드입니다. 수정하려면 기존 도전 기록을 취소하세요. 도전 횟수는 차감하지 않습니다.'); return; }
+  if (budget(totalAttemptsLeft.value) < 1) { showInputMessage('남은 도전 횟수를 확인하세요.'); return; }
   
   const newHints = [];
   const rows = document.querySelectorAll('.status-row');
-  const batchId = 'guess_' + Date.now();
+  const batchId = createBatchId('guess');
   
   rows.forEach(row => {
     const stat = row.dataset.stat;
@@ -447,19 +465,22 @@ applyGuessBtn.addEventListener('click', () => {
         isCorrect,
         value,
         cardName: selectedCard.name,
+        cardId: selectedCard.id,
         batchId: batchId
       });
     }
   });
   
   if (newHints.length === 0) {
-    alert("최소 1개 이상의 판정 결과를 선택해주세요.");
+    showInputMessage("최소 1개 이상의 판정 결과를 선택해주세요.");
     return;
   }
   
-  totalAttemptsLeft.value = (parseInt(totalAttemptsLeft.value, 10) || 0) - 1;
+  const completedHints = inferRevealedValues(newHints, [selectedCard]);
+  newHints[0].attemptCost = 1;
+  totalAttemptsLeft.value = budget(totalAttemptsLeft.value) - 1;
   
-  hints = [...hints, ...newHints];
+  hints = [...hints, ...completedHints];
   applyFilters();
   
   selectedCardContainer.classList.add('hidden');
@@ -478,14 +499,18 @@ applyGuessBtn.addEventListener('click', () => {
 // FILTERING
 // ------------------------------------------------------------------
 function applyFilters() {
+  showInputMessage('');
   candidates = filterCandidatesByHints(allCards, hints);
-  
+  candidateLimit = 48;
+  cancelCalculation();
   calculatedResults = null;
   updateUI();
   recContainer.classList.add('hidden');
   snipeList.innerHTML = '';
   scoutList.innerHTML = '';
-  strategyMsg.innerHTML = `<span class="badge" style="background:var(--accent-blue)">최적의 카드를 계산해주세요</span>`;
+  strategyMsg.innerHTML = initialStrategyHTML;
+  persistSession();
+  updateHintStrategy(false);
 }
 
 resetBtn.addEventListener('click', () => {
@@ -521,11 +546,11 @@ resetBtn.addEventListener('click', () => {
   
   // Reset numeric settings (0. 남은 횟수 설정)
   if (hintsLeft) hintsLeft.value = "1";
-  if (totalAttemptsLeft) totalAttemptsLeft.value = "3";
+  if (totalAttemptsLeft) totalAttemptsLeft.value = "4";
   if (problemsLeft) problemsLeft.value = "1";
   
-  updateUI();
-  strategyMsg.innerHTML = `<span class="badge" style="background:var(--accent-blue)">최적의 카드를 계산해주세요</span>`;
+  document.getElementById('candidateSearch').value = '';
+  applyFilters();
 });
 
 if (undoHintBtn) {
@@ -539,10 +564,11 @@ if (undoHintBtn) {
 // CRITERIA SELECTION LOGIC
 // ------------------------------------------------------------------
 const criteriaDescriptions = {
-  entropy: `<strong>기대 정보량 (Entropy):</strong> 전체 후보군을 가장 고르게 여러 판정 그룹으로 나누는 표준 알고리즘입니다. 평균적인 탐색 속도가 가장 빠르며 무난하게 좋은 카드들을 골라줍니다.`,
-  minimax: `<strong>최악 상황 최소화 (Minimax):</strong> 만약 운이 없더라도, 남는 후보의 최대 개수를 가장 작게 억제하는 극도의 안정적 정찰 기법입니다. 소거법으로 실패 확률을 원천 봉쇄할 때 적합합니다.`,
-  oneShot: `<strong>단판 확정 확률 (One-shot):</strong> 다음 1회 도전 결과로 남는 후보를 정확히 1장 이하로 압축해 내거나 정답을 바로 찾을 확률을 극대화합니다. 기회가 얼마 없어 확률에 도박을 걸어야 할 때 최고의 픽입니다.`,
-  expected: `<strong>평균 잔여 최소 (Average):</strong> 섀넌 엔트로피와 유사하지만, 다음 도전 결과 이후에 최종적으로 남게 될 카드 수의 '수학적 기댓값' 자체를 직접적으로 최소화하는 직관적인 탐색 방식입니다.`
+  entropy: '<strong>기대 정보량:</strong> 실제로 공개되는 값에 따라 결과를 나누어 정보량을 최대화합니다. 최단 해결 횟수를 보장하지는 않습니다.',
+  minimax: '<strong>최악 잔여 최소:</strong> 실패했을 때 남을 수 있는 가장 큰 후보군을 줄입니다. 정답이면 잔여 수는 0입니다.',
+  oneShot: '<strong>즉시 정답 확률:</strong> 이번 제출로 6개 항목이 모두 일치할 확률입니다. 후보 1장만 남기고 틀린 경우는 성공에 포함하지 않습니다.',
+  twoShot: '<strong>2회 내 성공 확률:</strong> 첫 판정 후 최선의 다음 카드를 제출할 때의 성공 확률입니다. 후보 60장 이하에서 전수 계산하며, 추가 힌트는 사용하지 않는 조건입니다.',
+  expected: '<strong>평균 잔여 최소:</strong> 이번 제출 후 남는 후보 카드 수의 평균을 줄입니다. 정답이면 잔여 수는 0입니다.'
 };
 
 function updateCriteriaUI(criteria) {
@@ -580,60 +606,86 @@ function updateCriteriaUI(criteria) {
   updateHintStrategy(false);
 }
 
-function sortRecommendations(list, criteria) {
-  if (criteria === 'entropy') {
-    return [...list].sort((a, b) => b.entropy - a.entropy);
-  } else if (criteria === 'minimax') {
-    return [...list].sort((a, b) => {
-      if (a.minimax !== b.minimax) return a.minimax - b.minimax;
-      return b.entropy - a.entropy; // Tie break with entropy
-    });
-  } else if (criteria === 'oneShot') {
-    return [...list].sort((a, b) => {
-      if (b.oneShotProb !== a.oneShotProb) return b.oneShotProb - a.oneShotProb;
-      return b.entropy - a.entropy; // Tie break with entropy
-    });
-  } else if (criteria === 'expected') {
-    return [...list].sort((a, b) => {
-      if (a.expectedRemaining !== b.expectedRemaining) return a.expectedRemaining - b.expectedRemaining;
-      return b.entropy - a.entropy; // Tie break with entropy
-    });
-  }
-  return list;
+function sortRecommendations(list, criteria) { return sortScores(list, criteria); }
+
+function getRecommendationLimit(container) {
+  const width = container.clientWidth || container.parentElement?.clientWidth || 0;
+  if (!width) return 1;
+  const minimumCardWidth = 112;
+  const gap = 12;
+  return Math.max(1, Math.min(6, Math.floor((width + gap) / (minimumCardWidth + gap))));
 }
 
 function renderRecommendationList(list, container) {
   container.innerHTML = '';
-  list.forEach(item => {
+  const visibleCount = Math.min(getRecommendationLimit(container), list.length);
+  container.style.setProperty('--recommendation-columns', Math.max(1, visibleCount));
+  list.slice(0, visibleCount).forEach(item => {
     const card = item.card;
     const div = document.createElement('div');
     div.className = 'card-item animate-fade-in';
-    const imgUrl = card.image_url || 'https://images.ygoprodeck.com/images/cards/80181649.jpg';
+    const imgUrl = escapeHTML(card.image_url || '');
+
+    const levelLabel = card.frameType === 'link' ? 'Lnk' : (card.frameType.startsWith('xyz') ? 'Rk' : 'Lv');
+    const lvText = getTargetRulesLevel(card) != null ? `${levelLabel}.${getTargetRulesLevel(card)}` : '';
+    const attrText = translateAttribute(card.attribute) || '';
+    const atkText = formatStat(card.atk);
+    const defText = formatStat(card.def);
     
-    const entropyText = `정보량: ${item.entropy.toFixed(2)} Bits`;
-    const expectedText = `평균 잔여: ${item.expectedRemaining.toFixed(1)}장`;
-    const minimaxText = `최악의 경우: ${item.minimax}장`;
-    const oneShotText = `단판 종결: ${(item.oneShotProb * 100).toFixed(1)}%`;
+    const entropyText = `정보: ${item.entropy.toFixed(2)} Bits`;
+    const expectedText = `평균: ${item.expectedRemaining.toFixed(1)}장`;
+    const minimaxText = `최악: ${item.minimax}장`;
+    const oneShotText = `즉시 정답: ${(item.oneShotProb * 100).toFixed(2)}%`;
     
     let detailHtml = '';
     if (activeCriteria === 'entropy') {
-      detailHtml = `<div class="card-item-info" style="font-weight:bold; color:var(--accent-gold);">${entropyText}</div>
-                    <div style="font-size:0.7rem; color:var(--text-muted);">${expectedText} | ${minimaxText}</div>`;
+      detailHtml = `
+        <div class="card-item-info" style="font-weight:bold; color:var(--accent-gold); margin-bottom: 0.15rem; font-size: 0.72rem;">${entropyText}</div>
+        <div class="card-item-stats" style="font-size: 0.68rem; color: var(--text-muted); display: flex; flex-direction: column; gap: 0.05rem;">
+          <span>${expectedText}</span>
+          <span>${minimaxText}</span>
+        </div>`;
     } else if (activeCriteria === 'minimax') {
-      detailHtml = `<div class="card-item-info" style="font-weight:bold; color:#f87171;">${minimaxText}</div>
-                    <div style="font-size:0.7rem; color:var(--text-muted);">${entropyText} | ${oneShotText}</div>`;
-    } else if (activeCriteria === 'oneShot') {
-      detailHtml = `<div class="card-item-info" style="font-weight:bold; color:#4ade80;">${oneShotText}</div>
-                    <div style="font-size:0.7rem; color:var(--text-muted);">${entropyText} | ${expectedText}</div>`;
+      detailHtml = `
+        <div class="card-item-info" style="font-weight:bold; color:#f87171; margin-bottom: 0.15rem; font-size: 0.72rem;">${minimaxText}</div>
+        <div class="card-item-stats" style="font-size: 0.68rem; color: var(--text-muted); display: flex; flex-direction: column; gap: 0.05rem;">
+          <span>${entropyText}</span>
+          <span>${oneShotText}</span>
+        </div>`;
+    } else if ((activeCriteria === 'oneShot' || activeCriteria === 'twoShot')) {
+      detailHtml = `
+        <div class="card-item-info" style="font-weight:bold; color:#4ade80; margin-bottom: 0.15rem; font-size: 0.72rem;">${oneShotText}</div>
+        <div class="card-item-stats" style="font-size: 0.68rem; color: var(--text-muted); display: flex; flex-direction: column; gap: 0.05rem;">
+          <span>${entropyText}</span>
+          <span>${expectedText}</span>
+        </div>`;
     } else if (activeCriteria === 'expected') {
-      detailHtml = `<div class="card-item-info" style="font-weight:bold; color:#60a5fa;">${expectedText}</div>
-                    <div style="font-size:0.7rem; color:var(--text-muted);">${entropyText} | ${minimaxText}</div>`;
+      detailHtml = `
+        <div class="card-item-info" style="font-weight:bold; color:#60a5fa; margin-bottom: 0.15rem; font-size: 0.72rem;">${expectedText}</div>
+        <div class="card-item-stats" style="font-size: 0.68rem; color: var(--text-muted); display: flex; flex-direction: column; gap: 0.05rem;">
+          <span>${entropyText}</span>
+          <span>${minimaxText}</span>
+        </div>`;
     }
     
     div.innerHTML = `
-      <img src="${imgUrl}" alt="${card.name}" loading="lazy">
-      <div class="card-item-title" title="${card.name}">${card.name}</div>
+      <img src="${imgUrl}" alt="${escapeHTML(card.name)}" loading="lazy" onerror="this.onerror=null;this.style.visibility='hidden'">
+      <div class="card-item-title" title="${escapeHTML(card.name)}">${escapeHTML(card.name)}</div>
       ${detailHtml}
+      <div class="card-item-info">${oneShotText}${item.twoShotProb === null ? '' : ` · 2회 내 ${(item.twoShotProb * 100).toFixed(2)}%`}</div>
+      <div class="candidate-stats" style="border-top: 1px dashed rgba(255,255,255,0.08); padding-top: 0.25rem; margin-top: 0.25rem;">
+        <div class="candidate-stats-row">
+          <span class="stat-badge frame-${card.frameType.toLowerCase().replace('_pendulum', '')}" style="font-size: 0.65rem; padding: 0.1rem 0.35rem;">${escapeHTML(translateFrame(card.frameType))}</span>
+        </div>
+        <div class="candidate-stats-row">
+          ${attrText ? `<span class="stat-badge attr" style="font-size: 0.65rem; padding: 0.1rem 0.35rem;">${escapeHTML(attrText)}</span>` : ''}
+          ${lvText ? `<span class="stat-badge level" style="font-size: 0.65rem; padding: 0.1rem 0.35rem;">${lvText}</span>` : ''}
+        </div>
+        <div class="candidate-stats-row">
+          <span class="stat-badge race" style="font-size: 0.65rem; padding: 0.1rem 0.35rem;">${escapeHTML(translateRace(card.race) || '-')}</span>
+        </div>
+        <div class="candidate-stats-atkdef">⚔️ ${atkText} / 🛡️ ${defText}</div>
+      </div>
     `;
     div.onclick = () => selectCard(card);
     container.appendChild(div);
@@ -642,13 +694,22 @@ function renderRecommendationList(list, container) {
 
 function renderRecommendations() {
   if (!calculatedResults) return;
-  
-  const sortedSnipes = sortRecommendations(calculatedResults.snipes, activeCriteria).slice(0, 5);
-  const sortedScouts = sortRecommendations(calculatedResults.scouts, activeCriteria).slice(0, 5);
+
+  const sortedSnipes = sortRecommendations(calculatedResults.snipes, activeCriteria);
+  const sortedScouts = sortRecommendations(calculatedResults.scouts, activeCriteria);
   
   renderRecommendationList(sortedSnipes, snipeList);
   renderRecommendationList(sortedScouts, scoutList);
 }
+
+let recommendationResizeFrame = 0;
+const recommendationResizeObserver = new ResizeObserver(() => {
+  if (!calculatedResults || recContainer.classList.contains('hidden')) return;
+  cancelAnimationFrame(recommendationResizeFrame);
+  recommendationResizeFrame = requestAnimationFrame(renderRecommendations);
+});
+recommendationResizeObserver.observe(snipeList);
+recommendationResizeObserver.observe(scoutList);
 
 recCriteriaGroup.addEventListener('click', (e) => {
   const btn = e.target.closest('.btn-toggle');
@@ -660,246 +721,87 @@ recCriteriaGroup.addEventListener('click', (e) => {
 // ------------------------------------------------------------------
 // RECOMMENDATION SOLVER
 // ------------------------------------------------------------------
+function cancelCalculation() {
+  calculationId++;
+  solverWorker?.terminate(); solverWorker = null;
+  calcRecBtn.disabled = false;
+  calcRecBtn.textContent = '최적의 카드 계산';
+}
+
 calcRecBtn.addEventListener('click', () => {
-  if (candidates.length <= 1) {
-    if (candidates.length === 1) {
-      updateHintStrategy(false);
-    } else {
-      alert("조건에 맞는 카드가 없습니다.");
-    }
-    return;
-  }
-  
-  calcRecBtn.textContent = "계산 중...";
+  if (!candidates.length || hasSolvedGuess(hints)) return;
+  cancelCalculation();
+  const id = calculationId;
   calcRecBtn.disabled = true;
-  
-  setTimeout(() => {
-    calculatedResults = calculateBestGuesses();
-    
-    recContainer.classList.remove('hidden');
-    renderRecommendations();
-    
-    calcRecBtn.textContent = "최적의 카드 계산";
-    calcRecBtn.disabled = false;
-    
-    updateHintStrategy(true);
-  }, 50);
+  calcRecBtn.textContent = '계산 중…';
+  try {
+    solverWorker = new Worker(new URL('./solver.worker.js', import.meta.url), { type: 'module' });
+    solverWorker.onmessage = ({ data }) => {
+      if (data.id !== calculationId) return;
+      calcRecBtn.disabled = false; calcRecBtn.textContent = '최적의 카드 계산';
+      if (data.error) { strategyMsg.textContent = `계산 실패: ${data.error}. 다시 시도하세요.`; return; }
+      calculatedResults = data.result;
+      recContainer.classList.remove('hidden');
+      const twoTurnButton = recCriteriaGroup.querySelector('[data-criteria="twoShot"]');
+      twoTurnButton.disabled = !calculatedResults.twoTurnExact;
+      twoTurnButton.title = calculatedResults.twoTurnExact ? '' : `후보 ${TWO_TURN_LIMIT}장 이하에서 계산합니다.`;
+      updateHintStrategy(true);
+      renderRecommendations();
+    };
+    solverWorker.onerror = () => {
+      cancelCalculation();
+      strategyMsg.textContent = '계산을 완료하지 못했습니다. 페이지를 새로고침하거나 다시 시도하세요.';
+    };
+    solverWorker.postMessage({ type: 'init', cards: allCards });
+    solverWorker.postMessage({ type: 'solve', id, request: {
+      candidateIds: candidates.map(card => card.id),
+      guessedIds: [...new Set(hints.filter(hint => hint.type === 'guess').map(hint => hint.cardId))],
+      revealedStats: [...new Set(hints.filter(hint => hint.isCorrect).map(hint => hint.stat))]
+    } });
+  } catch (error) { cancelCalculation(); strategyMsg.textContent = `계산을 시작하지 못했습니다: ${error.message}`; }
 });
 
-function calculateBestGuesses() {
-  const snipes = [];
-  const scouts = [];
-  const total = candidates.length;
-  
-  if (total === 0) return { snipes, scouts };
-
-  const guessedCardNames = new Set(hints.map(h => h.cardName).filter(Boolean));
-
-  // Optimization: If there are too many candidates, uniformly sample them 
-  // to calculate entropy extremely fast while maintaining statistical accuracy.
-  let targetPool = candidates;
-  if (total > 800) {
-    const step = Math.floor(total / 800) || 1;
-    targetPool = candidates.filter((_, i) => i % step === 0).slice(0, 800);
+function updateHintStrategy(autoSelect = false) {
+  const attempts = budget(totalAttemptsLeft.value);
+  const remainingHints = budget(hintsLeft.value);
+  const problems = budget(problemsLeft.value, 1);
+  const recommended = chooseCriteria({ attempts, twoTurnExact: calculatedResults?.twoTurnExact, candidateCount: candidates.length });
+  if (autoSelect || (activeCriteria === 'twoShot' && !calculatedResults?.twoTurnExact)) {
+    activeCriteria = recommended;
+    recCriteriaGroup.querySelectorAll('.btn-toggle').forEach(button => button.classList.toggle('active', button.dataset.criteria === activeCriteria));
+    criteriaDesc.innerHTML = criteriaDescriptions[activeCriteria];
   }
-  const sampleSize = targetPool.length;
-  const ratio = total / sampleSize;
-  const ratioForSquares = total / (sampleSize * sampleSize);
-  
-  const buckets = new Int32Array(64);
-  
-  // We scan ALL 13600+ cards to find the best scouts, regardless of candidate count
-  for (let i = 0; i < allCards.length; i++) {
-    const guess = allCards[i];
-    if (guessedCardNames.has(guess.name)) continue;
-    
-    buckets.fill(0);
-    
-    // Evaluate against the sample pool
-    for (let j = 0; j < sampleSize; j++) {
-      const target = targetPool[j];
-      const profile = getMatchProfile(guess, target);
-      buckets[profile]++;
-    }
-    
-    let sumOfSquares = 0;
-    let entropy = 0;
-    let maxBucket = 0;
-    let sizeOneBuckets = 0;
-    
-    const winProfile = 63; // all 6 bits matching (O, O, O, O, O, O)
-    
-    for (let k = 0; k < 64; k++) {
-      const count = buckets[k];
-      if (count > 0) {
-        if (k !== winProfile) {
-          sumOfSquares += count * count;
-          if (count > maxBucket) {
-            maxBucket = count;
-          }
-        }
-        
-        const p = count / sampleSize;
-        entropy -= p * Math.log2(p);
-        
-        if (k === winProfile) {
-          sizeOneBuckets += count;
-        } else if (count === 1) {
-          sizeOneBuckets++;
-        }
-      }
-    }
-    
-    // Extrapolate the expected values to the true population size
-    const expectedRemaining = sumOfSquares * ratioForSquares;
-    const minimax = Math.round(maxBucket * ratio);
-    // oneShotProb is only accurate/useful when candidates are very few (no sampling).
-    const oneShotProb = sampleSize === total ? (sizeOneBuckets / total) : 0;
-    
-    const scoreObj = { 
-      card: guess, 
-      entropy, 
-      expectedRemaining, 
-      minimax, 
-      oneShotProb 
-    };
-    
-    const isCandidate = candidates.includes(guess);
-    if (isCandidate) {
-      snipes.push(scoreObj);
-    } else {
-      scouts.push(scoreObj);
-    }
-  }
-  
-  return { snipes, scouts };
-}
-
-let isUpdatingStrategy = false;
-function updateHintStrategy(shouldAutoSelect = false) {
-  if (isUpdatingStrategy) return;
-  isUpdatingStrategy = true;
-
-  const attempts = parseInt(totalAttemptsLeft.value, 10) || 0;
-  const problems = parseInt(problemsLeft.value, 10) || 1;
-  const hLeft = parseInt(hintsLeft.value, 10) || 0;
-  const attemptsPerProblem = attempts / problems;
-  const total = candidates.length;
-  
-  if (total === 1) {
-    strategyMsg.innerHTML = `
-      <div style="background: rgba(34,197,94,0.15); border: 1px solid #22c55e; padding: 0.75rem; border-radius: 8px; margin-bottom: 0.5rem;">
-        <span class="badge" style="background:#22c55e; margin-bottom: 0.5rem; display: inline-block;">🎯 정답 확정</span>
-        <p style="font-size: 0.85rem; color: #4ade80;">후보가 1개만 남았습니다! 즉시 인게임에서 <strong>[${candidates[0].name}]</strong> 카드로 도전하세요.</p>
-      </div>
-    `;
-    
-    // Clear styles when single candidate
-    const snipeHeader = document.getElementById('snipeHeader');
-    const scoutHeader = document.getElementById('scoutHeader');
-    if (snipeHeader && scoutHeader) {
-      snipeHeader.style.textShadow = 'none';
-      snipeHeader.style.transform = 'none';
-      snipeHeader.innerHTML = `🎯 정답 스나이핑 (후보 중 최적)`;
-      scoutHeader.style.textShadow = 'none';
-      scoutHeader.style.transform = 'none';
-      scoutHeader.innerHTML = `🕵️ 극한의 정찰 픽 (오답 확실)`;
-    }
-    
-    isUpdatingStrategy = false;
+  const messages = [];
+  if (hasSolvedGuess(hints) && candidates.length) {
+    calcRecBtn.disabled = true;
+    strategyMsg.textContent = '기록한 도전의 6개 항목이 모두 일치합니다. 정답으로 판정된 문제입니다. 초기화 후 다음 문제의 실제 남은 횟수를 입력하세요.';
     return;
   }
-  
-  let badgeHtml = '';
-  let adviceHtml = '';
-  let recommendedLogic = 'entropy';
-  
-  if (attemptsPerProblem < 1.1) {
-    if (attempts <= 0) {
-      badgeHtml = `<span class="badge" style="background:#ef4444; margin-bottom: 0.5rem; display: inline-block;">⚠️ 도전 기회 소진</span>`;
-      adviceHtml = `남은 도전 기회가 없습니다. 하지만 정답 카드를 계속 찾기 위해, 남은 힌트(${hLeft}개)를 활용하거나 아래 추천을 통해 효율적인 카드 탐색을 해보실 수 있습니다.`;
-      recommendedLogic = hLeft > 0 ? 'expected' : 'oneShot';
-    } else if (hLeft > 0) {
-      badgeHtml = `<span class="badge" style="background:#f59e0b; color:#000; margin-bottom: 0.5rem; display: inline-block;">⚠️ 힌트 사용 필수</span>`;
-      adviceHtml = `문제당 평균 도전 기회가 1회 이하입니다. 빗나갈 시 즉시 실패하므로, 남은 힌트(${hLeft}개)를 우선적으로 사용하여 후보를 확실하게 좁히는 것이 안전합니다.`;
-    } else {
-      badgeHtml = `<span class="badge" style="background:#ef4444; margin-bottom: 0.5rem; display: inline-block;">🚨 극단적 저격 상황</span>`;
-      adviceHtml = `남은 힌트가 없습니다! 이번에 무조건 맞춰야 합니다. 후보군 중에서 <strong>[단판 확정 확률]</strong>이 가장 높은 카드로 스나이핑을 시도해야 생존율이 가장 높습니다.`;
-      recommendedLogic = 'oneShot';
-    }
-  } else if (attemptsPerProblem < 1.8) {
-    if (hLeft > 0 && total > 5) {
-      badgeHtml = `<span class="badge" style="background:#f59e0b; color:#000; margin-bottom: 0.5rem; display: inline-block;">⚠️ 힌트 사용 권장</span>`;
-      adviceHtml = `도전 기회가 다소 촉박합니다. 후보가 ${total}장 남아 한 번에 맞추기 어렵다면 확실한 힌트를 하나 더 개방하는 것이 좋습니다.`;
-    } else {
-      badgeHtml = `<span class="badge" style="background:#3b82f6; margin-bottom: 0.5rem; display: inline-block;">🟢 정답 스나이핑 권장</span>`;
-      adviceHtml = `후보가 많지 않습니다. 후보 내에서 최고의 분별력을 가진 카드로 정답 도전을 해보세요. <strong>[최악 상황 최소화(Minimax)]</strong> 또는 <strong>[평균 잔여 최소]</strong>를 사용하면 틀려도 다음 턴에 정답을 쉽게 좁힐 수 있습니다.`;
-      recommendedLogic = 'minimax';
-    }
-  } else {
-    badgeHtml = `<span class="badge" style="background:#3b82f6; margin-bottom: 0.5rem; display: inline-block;">🕵️ 정찰 및 탐색 기회 충분</span>`;
-    if (total > 15) {
-      adviceHtml = `남은 도전 기회가 넉넉합니다(${attempts}회). 전체 카드 데이터베이스에서 <strong>[기대 정보량(Entropy)]</strong>이 가장 큰 <strong>'극한의 정찰 픽'</strong>을 하나 제출하면, 남은 후보(${total}장)를 가장 빠르고 균등하게 폭파하듯 제거할 수 있습니다.`;
-      recommendedLogic = 'entropy';
-    } else {
-      adviceHtml = `후보군이 ${total}장으로 좁혀졌으며 도전 기회가 충분합니다. <strong>[평균 잔여 최소]</strong> 기준으로 후보 중 가장 안전한 카드를 스나이핑하여 정답과 정찰을 동시에 노리는 하이브리드 플레이가 좋습니다.`;
-      recommendedLogic = 'expected';
-    }
+  if (!candidates.length) messages.push('일치하는 후보가 없습니다. 최근 입력을 취소하거나 공개 값을 확인하세요.');
+  else if (!attempts) messages.push('남은 도전이 없습니다. 다음 횟수 지급 후 제출할 수 있습니다.');
+  else if (candidates.length === 1) messages.push(`후보가 1장입니다. [${escapeHTML(candidates[0].name)}] 카드로 제출하세요.`);
+  else if (attempts === 1) messages.push('마지막 도전은 <strong>즉시 정답 확률</strong>이 가장 높은 카드를 고르세요. 후보를 좁혀도 추가로 제출할 수 없습니다.');
+  else if (calculatedResults?.twoTurnExact) messages.push('<strong>2회 내 성공 확률</strong>은 첫 결과별 최선의 다음 제출까지 계산합니다.');
+  else messages.push('기대 정보량과 평균 잔여 수로 후보를 좁히고, 도전이 적어지면 성공 확률을 비교하세요.');
+  if (calculatedResults) {
+    const best = sortScores([...calculatedResults.snipes, ...calculatedResults.scouts], activeCriteria)[0];
+    if (best) messages.push(`현재 기준의 추천: <strong>${escapeHTML(best.card.name)}</strong> · 즉시 정답 ${(best.oneShotProb * 100).toFixed(2)}%${best.twoShotProb === null ? '' : ` · 2회 내 ${(best.twoShotProb * 100).toFixed(2)}%`}`);
+    if (remainingHints && calculatedResults.hint) messages.push(`무작위 힌트 1회 후 예상 후보: ${calculatedResults.hint.expectedRemaining.toFixed(1)}장 (미공개 항목이 같은 확률로 선택된다고 가정).`);
+    messages.push(`후보 카드가 같은 확률로 정답이라는 가정 · 계산 ${(calculatedResults.durationMs / 1000).toFixed(2)}초`);
   }
-  
-  const criteriaNames = {
-    entropy: '기대 정보량 (Entropy)',
-    minimax: '최악 상황 최소화 (Minimax)',
-    oneShot: '단판 확정 확률 (One-shot)',
-    expected: '평균 잔여 최소 (Average)'
-  };
-  
-  strategyMsg.innerHTML = `
-    <div style="background: rgba(255,255,255,0.05); border: 1px solid var(--panel-border); padding: 0.75rem; border-radius: 8px; font-size: 0.85rem; line-height: 1.4;">
-      ${badgeHtml}
-      <p style="margin-bottom: 0.5rem; color: var(--text-main);">${adviceHtml}</p>
-      <div style="margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px dashed rgba(255,255,255,0.1); font-size: 0.8rem; color: var(--accent-gold);">
-        💡 추천 검색 기준: <strong>${criteriaNames[recommendedLogic]}</strong> (클릭하여 기준 변경 가능)
-      </div>
-    </div>
-  `;
-
-  // Visual cues highlighting the recommended list
-  const snipeHeader = document.getElementById('snipeHeader');
-  const scoutHeader = document.getElementById('scoutHeader');
-  if (snipeHeader && scoutHeader) {
-    if (recommendedLogic === 'entropy') {
-      scoutHeader.style.textShadow = '0 0 10px rgba(168, 85, 247, 0.8)';
-      scoutHeader.style.transform = 'scale(1.02)';
-      scoutHeader.style.transition = 'all 0.3s ease';
-      scoutHeader.innerHTML = `🕵️ 극한의 정찰 픽 (오답 확실) <span class="badge" style="background:#a855f7; font-size:0.7rem; padding:0.15rem 0.4rem; vertical-align:middle; margin-left:0.5rem;">추천 행동</span>`;
-      
-      snipeHeader.style.textShadow = 'none';
-      snipeHeader.style.transform = 'none';
-      snipeHeader.innerHTML = `🎯 정답 스나이핑 (후보 중 최적)`;
-    } else {
-      snipeHeader.style.textShadow = '0 0 10px rgba(251, 191, 36, 0.8)';
-      snipeHeader.style.transform = 'scale(1.02)';
-      snipeHeader.style.transition = 'all 0.3s ease';
-      snipeHeader.innerHTML = `🎯 정답 스나이핑 (후보 중 최적) <span class="badge" style="background:var(--accent-gold); color:#000; font-size:0.7rem; padding:0.15rem 0.4rem; vertical-align:middle; margin-left:0.5rem;">추천 행동</span>`;
-      
-      scoutHeader.style.textShadow = 'none';
-      scoutHeader.style.transform = 'none';
-      scoutHeader.innerHTML = `🕵️ 극한의 정찰 픽 (오답 확실)`;
-    }
-  }
-
-  if (shouldAutoSelect === true && calculatedResults && activeCriteria !== recommendedLogic) {
-    updateCriteriaUI(recommendedLogic);
-  }
-
-  isUpdatingStrategy = false;
+  if (problems > 1) messages.push(`남은 ${problems}문제가 도전 ${attempts}회를 공유합니다. 표시한 성공 확률은 현재 문제 기준입니다.`);
+  strategyMsg.innerHTML = messages.map(message => `<p>${message}</p>`).join('');
 }
 
-// Add state input change listeners
-totalAttemptsLeft.addEventListener('input', () => updateHintStrategy(false));
-problemsLeft.addEventListener('input', () => updateHintStrategy(false));
-hintsLeft.addEventListener('input', () => updateHintStrategy(false));
+for (const input of [totalAttemptsLeft, hintsLeft, problemsLeft]) {
+  input.addEventListener('change', () => {
+    input.value = budget(input.value, input === problemsLeft ? 1 : 0);
+    persistSession(); updateHintStrategy(true);
+    if (calculatedResults) renderRecommendations();
+  });
+}
+document.getElementById('candidateSearch').addEventListener('input', () => { candidateLimit = 48; renderCandidatePage(); });
+document.getElementById('showMoreCandidates').addEventListener('click', () => { candidateLimit += 48; renderCandidatePage(); });
 
 if (updateDbBtn) {
   updateDbBtn.addEventListener('click', async () => {
@@ -912,48 +814,15 @@ if (updateDbBtn) {
     };
     
     try {
-      setProgress(10, '영어 카드 데이터 요청 중...');
-      const enRes = await fetch('https://db.ygoprodeck.com/api/v7/cardinfo.php?format=Master%20Duel').then(r => r.json());
-      
-      setProgress(40, '한국어 카드 데이터 요청 중...');
-      const koRes = await fetch('https://db.ygoprodeck.com/api/v7/cardinfo.php?format=Master%20Duel&language=ko').then(r => r.json());
-      
-      setProgress(70, '데이터 병합 및 매핑 중...');
-      const enCards = enRes.data || [];
-      const koCards = koRes.data || [];
-      
-      const koMap = new Map();
-      koCards.forEach(c => koMap.set(c.id, c));
-      
-      const uniqueNames = new Set();
-      const finalCards = [];
-      
-      for (const en of enCards) {
-        if (en.type === 'Token' || en.type === 'Skill Card') continue;
-        if (uniqueNames.has(en.name)) continue;
-        uniqueNames.add(en.name);
-        
-        const ko = koMap.get(en.id);
-        let koName = ko ? ko.name : en.name;
-        
-        // Map frame type correctly (handles pendulum compound types)
-        let frameType = mapFrameType(en.type, en.frameType);
-        
-        finalCards.push({
-          id: en.id,
-          name: koName,
-          nameEn: en.name,
-          frameType: frameType,
-          attribute: en.attribute || null,
-          level: en.level || en.rank || en.linkval || null,
-          race: en.race,
-          type: en.type,
-          atk: en.atk !== undefined ? en.atk : null,
-          def: en.def !== undefined ? en.def : null,
-          image_url: en.card_images && en.card_images[0] ? en.card_images[0].image_url_cropped : null
-        });
-      }
-      
+      setProgress(10, '카드 데이터 요청 중...');
+      const [english, korean] = await Promise.allSettled([
+        fetchCardData('https://db.ygoprodeck.com/api/v7/cardinfo.php?format=Master%20Duel'),
+        fetchCardData('https://db.ygoprodeck.com/api/v7/cardinfo.php?format=Master%20Duel&language=ko')
+      ]);
+      if (english.status !== 'fulfilled') throw english.reason;
+      setProgress(70, '데이터 검증 중...');
+      const finalCards = normalizeCards(english.value, korean.status === 'fulfilled' ? korean.value : [], [...new Map([...rawCards, ...allCards].map(card => [card.id, card])).values()]);
+      persistSession();
       setProgress(90, 'IndexedDB 캐시에 저장 중...');
       await saveCachedCards(finalCards);
       
@@ -964,11 +833,44 @@ if (updateDbBtn) {
       
     } catch (err) {
       console.error(err);
-      setProgress(0, '오류 발생: 데이터 로드 실패');
+      setProgress(0, `업데이트 실패: ${err.message}`);
       updateDbBtn.disabled = false;
       setTimeout(() => {
         updateProgressContainer.style.display = 'none';
       }, 3000);
+    }
+  });
+}
+
+if (clearDbBtn) {
+  clearDbBtn.addEventListener('click', async () => {
+    if (!confirm('다운로드한 최신 카드 데이터를 삭제하고 내장 데이터로 되돌리시겠습니까?')) return;
+    try {
+      await clearCachedCards();
+      showInputMessage('데이터가 성공적으로 삭제되었습니다. 내장 데이터를 적용하기 위해 페이지를 새로고침합니다.');
+      window.location.reload();
+    } catch (err) {
+      console.error(err);
+      showInputMessage('데이터 삭제 중 오류가 발생했습니다.');
+    }
+  });
+}
+
+// Collapsible Settings Accordion Toggle
+const toggleSettingsBtn = document.getElementById('toggleSettingsBtn');
+const settingsContent = document.getElementById('settingsContent');
+const settingsArrow = document.getElementById('settingsArrow');
+const dbStatusBadge = document.getElementById('dbStatusBadge');
+
+if (toggleSettingsBtn && settingsContent) {
+  toggleSettingsBtn.addEventListener('click', () => {
+    const isHidden = settingsContent.classList.contains('hidden');
+    if (isHidden) {
+      settingsContent.classList.remove('hidden');
+      if (settingsArrow) settingsArrow.textContent = '▼';
+    } else {
+      settingsContent.classList.add('hidden');
+      if (settingsArrow) settingsArrow.textContent = '▶';
     }
   });
 }

@@ -4,6 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "test": "node --test",
+    "evaluate": "node evaluate_algorithm.js",
+    "compare": "node simulate_compare.js",
+    "data:update": "node merge_data.js",
     "dev": "vite --host",
     "build": "vite build",
     "preview": "vite preview"

@@ -36,8 +36,8 @@
       }
       .candidate-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-        gap: 1rem;
+        grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+        gap: 0.75rem;
         max-height: 500px;
         overflow-y: auto;
         padding-right: 0.5rem;
@@ -50,16 +50,23 @@
         text-align: center;
         cursor: pointer;
         transition: transform 0.2s, border-color 0.2s;
+        max-width: 120px;
+        width: 100%;
+        margin: 0 auto;
+        min-width: 0;
       }
       .candidate-card:hover {
         transform: translateY(-2px);
         border-color: var(--accent-blue);
       }
       .candidate-card img {
-        max-width: 100%;
-        height: auto;
+        width: 100%;
+        aspect-ratio: 1 / 1;
+        object-fit: cover;
+        object-position: top;
         border-radius: 4px;
         margin-bottom: 0.5rem;
+        background: rgba(0,0,0,0.3);
       }
       .candidate-name {
         font-size: 0.85rem;
@@ -68,16 +75,6 @@
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
-      }
-      .candidate-stats {
-        font-size: 0.75rem;
-        color: var(--text-light);
-        text-align: left;
-      }
-      .candidate-stats div {
-        margin-bottom: 0.15rem;
-        display: flex;
-        justify-content: space-between;
       }
       /* Custom Scrollbar */
       .candidate-grid::-webkit-scrollbar {
@@ -103,12 +100,6 @@
         .candidate-name {
           font-size: 0.75rem !important;
           margin-bottom: 0.25rem !important;
-        }
-        .candidate-stats {
-          font-size: 0.65rem !important;
-        }
-        .candidate-stats div {
-          margin-bottom: 0.05rem !important;
         }
       }
       @media (max-width: 480px) {
@@ -146,6 +137,8 @@
         </nav>
       </header>
 
+      <p class="hint-desc" style="text-align:center;">연습 모드: 도전·힌트 횟수는 제한하지 않습니다. 실제 이벤트의 일일 지급, 보너스 힌트 및 보상은 재현하지 않습니다.</p>
+      <p id="playNotice" role="status" hidden></p>
       <main class="container" style="max-width: 1200px; margin: 0 auto; display: flex; flex-direction: column; gap: 1.5rem;">
         
         <section class="panel mb-4" style="text-align: center;">

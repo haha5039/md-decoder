@@ -1,6 +1,6 @@
 import './style.css';
 import { allCards as rawCards } from './cards_data.js';
-import { isFrameMatch, isLevelMatch, getValidLevels, renderCardStatsHTML, translateAttribute, translateFrame, translateRace, getTargetRulesLevel, filterCandidatesByHints } from './utils.js';
+import { isFrameMatch, isLevelMatch, getValidLevels, renderCardStatsHTML, translateAttribute, translateFrame, translateRace, getTargetRulesLevel, filterCandidatesByHints, getGuessFeedback, escapeHTML, formatStat } from './utils.js';
 import { getCachedCards } from './db.js';
 
 let allCards = [];
@@ -42,6 +42,7 @@ const hintEls = {
 
 // State
 let targetCard = null;
+let gameWon = false;
 let attempts = 0;
 let hintUseCount = 0;
 let pendingGuessCard = null;
@@ -60,8 +61,18 @@ let candidates = [];
 
 const statKeys = ['frameType', 'level', 'attribute', 'race', 'atk', 'def'];
 
+function showPlayMessage(message) {
+  const notice = document.getElementById('playNotice');
+  notice.textContent = message;
+  notice.hidden = !message;
+  if (message) notice.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
 // Initialize game
 function initGame() {
+  if (!allCards.length) return;
+  gameWon = false;
+  showPlayMessage('');
   // Randomly select a card
   const randomIndex = Math.floor(Math.random() * allCards.length);
   targetCard = allCards[randomIndex];
@@ -94,12 +105,15 @@ function initGame() {
   victoryModal.style.display = 'none';
   confirmModal.style.display = 'none';
   
-  console.log('Target Card (Cheat):', targetCard.name);
+
 }
 
 function selectCardForGuess(card) {
+  if (gameWon) return;
+  if (history.some(row => !row.isHint && row.card.id === card.id)) { showPlayMessage('이미 판정한 카드입니다. 도전 횟수는 차감하지 않습니다.'); return; }
+  showPlayMessage('');
   pendingGuessCard = card;
-  confirmMsg.innerHTML = `<strong>[${card.name}]</strong> 카드로 판정(도전)하시겠습니까?`;
+  confirmMsg.innerHTML = `<strong>[${escapeHTML(card.name)}]</strong> 카드로 판정(도전)하시겠습니까?`;
   confirmImg.src = card.image_url || '';
   confirmModal.style.display = 'flex';
 }
@@ -142,6 +156,7 @@ function revealRandomHint(isInitial = false) {
 }
 
 getHintBtn.addEventListener('click', () => {
+  if (gameWon) return;
   const unrevealed = statKeys.filter(k => !revealedHints[k]);
   if (unrevealed.length > 0) {
     hintUseCount++;
@@ -151,7 +166,7 @@ getHintBtn.addEventListener('click', () => {
 });
 
 function getStatDisplay(val) {
-  return val === null || val === undefined ? '-' : val;
+  return formatStat(val);
 }
 
 function updateHintUI() {
@@ -171,7 +186,7 @@ function updateHintUI() {
   });
   
   const unrevealed = statKeys.filter(k => !revealedHints[k]);
-  getHintBtn.disabled = unrevealed.length === 0;
+  getHintBtn.disabled = gameWon || unrevealed.length === 0;
   if (unrevealed.length === 0) {
     getHintBtn.textContent = '모든 힌트 공개됨';
     getHintBtn.style.opacity = '0.5';
@@ -202,14 +217,14 @@ guessInput.addEventListener('input', (e) => {
       const li = document.createElement('li');
       li.className = 'search-dropdown-item';
       
-      const imgUrl = card.image_url ? card.image_url.replace('.jpg', '_small.jpg') : '';
+      const imgUrl = escapeHTML(card.image_url || '');
       const statsHTML = renderCardStatsHTML(card);
       
       li.innerHTML = `
-        <img src="${imgUrl}" alt="${card.name}" onerror="this.src='${card.image_url || ''}'">
+        <img src="${imgUrl}" alt="${escapeHTML(card.name)}" onerror="this.onerror=null;this.style.visibility='hidden'">
         <div class="search-dropdown-info">
-          <div class="search-dropdown-title">${card.name}</div>
-          <div class="search-dropdown-subtitle">${card.nameEn || ''}</div>
+          <div class="search-dropdown-title">${escapeHTML(card.name)}</div>
+          <div class="search-dropdown-subtitle">${escapeHTML(card.nameEn || '')}</div>
           ${statsHTML}
         </div>
       `;
@@ -233,23 +248,15 @@ document.addEventListener('click', (e) => {
 });
 
 function submitGuess(guessCard) {
-  if (!targetCard) return;
+  if (!targetCard || gameWon || history.some(row => !row.isHint && row.card.id === guessCard.id)) return;
   
   attempts++;
   attemptCountEl.textContent = attempts;
   
-  // Compare stats (The result is how the guess compares to the target)
-  const result = {
-    card: guessCard,
-    frame: isFrameMatch(targetCard, guessCard.frameType),
-    attribute: guessCard.attribute === targetCard.attribute,
-    level: isLevelMatch(targetCard, guessCard.validLevels),
-    race: guessCard.race === targetCard.race || (guessCard.race === null && targetCard.race === null),
-    atk: guessCard.atk === targetCard.atk,
-    def: guessCard.def === targetCard.def,
-    systemHints: [...systemRevealedKeys] // Capture system revealed hints at this moment
-  };
-  
+  const feedback = getGuessFeedback(guessCard, targetCard);
+  const result = { card: guessCard, ...feedback.matches, frame: feedback.matches.frameType, won: feedback.won, systemHints: [...systemRevealedKeys] };
+  gameWon = feedback.won;
+
   // Auto-reveal matching stats
   if (result.frame) revealedHints.frameType = true;
   if (result.attribute) revealedHints.attribute = true;
@@ -284,7 +291,7 @@ function updateCandidates() {
   const gameHints = [];
   
   // 1. System-revealed hints → 'direct' type (exact match with target)
-  for (const key of systemRevealedKeys) {
+  for (const key of statKeys.filter(stat => revealedHints[stat])) {
     gameHints.push({
       type: 'direct',
       stat: key,
@@ -326,25 +333,35 @@ function renderCandidates() {
   candidateCount.textContent = `${candidates.length}장`;
   candidateGrid.innerHTML = '';
   
-  // Limit to 50 for performance
-  const displayList = candidates.slice(0, 50);
+  // Limit to 48 for performance (aligns with 6 columns)
+  const displayList = candidates.slice(0, 48);
   
   displayList.forEach(card => {
     const cardEl = document.createElement('div');
     cardEl.className = 'candidate-card';
     
-    const imgUrl = card.image_url ? card.image_url.replace('.jpg', '_small.jpg') : '';
+    const imgUrl = escapeHTML(card.image_url || '');
+    const levelLabel = card.frameType === 'link' ? 'Lnk' : (card.frameType.startsWith('xyz') ? 'Rk' : 'Lv');
+    const lvText = getTargetRulesLevel(card) != null ? `${levelLabel}.${getTargetRulesLevel(card)}` : '';
+    const attrText = translateAttribute(card.attribute) || '';
+    const atkText = formatStat(card.atk);
+    const defText = formatStat(card.def);
     
     cardEl.innerHTML = `
-      <img src="${imgUrl}" alt="${card.name}" loading="lazy" onerror="this.src='${card.image_url}'">
-      <div class="candidate-name">${card.name}</div>
+      <img src="${imgUrl}" alt="${escapeHTML(card.name)}" loading="lazy" onerror="this.onerror=null;this.style.visibility='hidden'">
+      <div class="candidate-name" title="${escapeHTML(card.name)}">${escapeHTML(card.name)}</div>
       <div class="candidate-stats">
-        <div><span>카드 프레임:</span> <span>${getStatDisplay(translateFrame(card.frameType))}</span></div>
-        <div><span>속성:</span> <span>${getStatDisplay(translateAttribute(card.attribute))}</span></div>
-        <div><span>레벨 / 랭크 / 링크:</span> <span>${getStatDisplay(card.level)}</span></div>
-        <div><span>종족:</span> <span>${getStatDisplay(translateRace(card.race))}</span></div>
-        <div><span>공격력:</span> <span>${getStatDisplay(card.atk)}</span></div>
-        <div><span>수비력:</span> <span>${getStatDisplay(card.def)}</span></div>
+        <div class="candidate-stats-row">
+          <span class="stat-badge frame-${card.frameType.toLowerCase().replace('_pendulum', '')}" style="font-size: 0.65rem; padding: 0.1rem 0.35rem;">${escapeHTML(translateFrame(card.frameType))}</span>
+        </div>
+        <div class="candidate-stats-row">
+          ${attrText ? `<span class="stat-badge attr" style="font-size: 0.65rem; padding: 0.1rem 0.35rem;">${escapeHTML(attrText)}</span>` : ''}
+          ${lvText ? `<span class="stat-badge level" style="font-size: 0.65rem; padding: 0.1rem 0.35rem;">${lvText}</span>` : ''}
+        </div>
+        <div class="candidate-stats-row">
+          <span class="stat-badge race" style="font-size: 0.65rem; padding: 0.1rem 0.35rem;">${escapeHTML(translateRace(card.race) || '-')}</span>
+        </div>
+        <div class="candidate-stats-atkdef">⚔️ ${atkText} / 🛡️ ${defText}</div>
       </div>
     `;
     
@@ -357,7 +374,7 @@ function renderCandidates() {
 }
 
 function getHintText(key, card) {
-  let val = card[key];
+  let val = key === 'level' ? getTargetRulesLevel(card) : card[key];
   if (key === 'frameType') {
     return `카드 프레임: ${translateFrame(val)}`;
   } else if (key === 'attribute') {
@@ -367,28 +384,21 @@ function getHintText(key, card) {
   } else if (key === 'race') {
     return `종족: ${translateRace(val)}`;
   } else if (key === 'atk') {
-    return `공격력: ${val === null || val === undefined ? '-' : val}`;
+    return `공격력: ${formatStat(val)}`;
   } else if (key === 'def') {
-    return `수비력: ${val === null || val === undefined ? '-' : val}`;
+    return `수비력: ${formatStat(val)}`;
   }
   return '';
 }
 
 function getEquivalentCards(target) {
-  return allCards.filter(card => 
-    card.id !== target.id && // exclude the target itself
-    isFrameMatch(target, card.frameType) &&
-    isLevelMatch(target, card.validLevels) &&
-    card.attribute === target.attribute &&
-    (card.race === target.race || (card.race === null && target.race === null)) &&
-    card.atk === target.atk &&
-    card.def === target.def
-  );
+  return allCards.filter(card => card.id !== target.id && getGuessFeedback(card, target).won);
 }
 
 function rebuildGameStateFromHistory() {
   attempts = 0;
   hintUseCount = 0;
+  gameWon = false;
   statKeys.forEach(k => revealedHints[k] = false);
   systemRevealedKeys = [];
   
@@ -405,19 +415,9 @@ function rebuildGameStateFromHistory() {
     } else {
       attempts++;
       
-      const frameMatch = isFrameMatch(targetCard, row.card.frameType);
-      const attributeMatch = row.card.attribute === targetCard.attribute;
-      const levelMatch = isLevelMatch(targetCard, row.card.validLevels);
-      const raceMatch = row.card.race === targetCard.race || (row.card.race === null && targetCard.race === null);
-      const atkMatch = row.card.atk === targetCard.atk;
-      const defMatch = row.card.def === targetCard.def;
-      
-      if (frameMatch) revealedHints.frameType = true;
-      if (attributeMatch) revealedHints.attribute = true;
-      if (levelMatch) revealedHints.level = true;
-      if (raceMatch) revealedHints.race = true;
-      if (atkMatch) revealedHints.atk = true;
-      if (defMatch) revealedHints.def = true;
+      const feedback = getGuessFeedback(row.card, targetCard);
+      for (const stat of statKeys) if (feedback.matches[stat]) revealedHints[stat] = true;
+      gameWon ||= feedback.won;
     }
   }
   
@@ -444,8 +444,8 @@ function renderHistory() {
     if (row.isHint) {
       imgTd.innerHTML = `<span style="font-size: 1.2rem;">💡</span>`;
     } else {
-      const imgUrl = row.card.image_url ? row.card.image_url.replace('.jpg', '_small.jpg') : '';
-      imgTd.innerHTML = `<img src="${imgUrl}" alt="card" style="width: 40px; border-radius: 3px;" loading="lazy" onerror="this.src='${row.card.image_url}'">`;
+      const imgUrl = escapeHTML(row.card.image_url || '');
+      imgTd.innerHTML = `<img src="${imgUrl}" alt="card" style="width: 40px; border-radius: 3px;" loading="lazy" onerror="this.onerror=null;this.style.visibility='hidden'">`;
     }
     tr.appendChild(imgTd);
     
@@ -492,14 +492,14 @@ function renderHistory() {
     if (row.isHint) {
       tr.appendChild(makeHintCell(translateFrame(targetCard.frameType), row.key === 'frameType'));
       tr.appendChild(makeHintCell(translateAttribute(targetCard.attribute), row.key === 'attribute'));
-      tr.appendChild(makeHintCell(targetCard.level, row.key === 'level'));
+      tr.appendChild(makeHintCell(getTargetRulesLevel(targetCard), row.key === 'level'));
       tr.appendChild(makeHintCell(translateRace(targetCard.race), row.key === 'race'));
       tr.appendChild(makeHintCell(targetCard.atk, row.key === 'atk'));
       tr.appendChild(makeHintCell(targetCard.def, row.key === 'def'));
     } else {
       tr.appendChild(makeCell(translateFrame(row.card.frameType), row.frame));
       tr.appendChild(makeCell(translateAttribute(row.card.attribute), row.attribute));
-      tr.appendChild(makeCell(row.card.level, row.level));
+      tr.appendChild(makeCell(getTargetRulesLevel(row.card), row.level));
       tr.appendChild(makeCell(translateRace(row.card.race), row.race));
       tr.appendChild(makeCell(row.card.atk, row.atk));
       tr.appendChild(makeCell(row.card.def, row.def));
@@ -551,8 +551,8 @@ function showVictory(guessCard) {
   targetDiv.style.marginBottom = '1rem';
   targetDiv.innerHTML = `
     <div style="font-weight: bold; color: var(--accent-gold); margin-bottom: 0.5rem; font-size: 1.1rem;">🎯 정답 카드</div>
-    <img src="${targetCard.image_url}" alt="${targetCard.name}" style="max-width: 140px; border-radius: var(--radius); border: 2px solid var(--accent-gold);">
-    <div style="font-weight: 600; margin-top: 0.25rem; font-size: 1rem;">${targetCard.name}</div>
+    <img src="${escapeHTML(targetCard.image_url)}" alt="${escapeHTML(targetCard.name)}" style="max-width: 140px; border-radius: var(--radius); border: 2px solid var(--accent-gold);">
+    <div style="font-weight: 600; margin-top: 0.25rem; font-size: 1rem;">${escapeHTML(targetCard.name)}</div>
   `;
   container.appendChild(targetDiv);
   
@@ -573,8 +573,8 @@ function showVictory(guessCard) {
           
           return `
             <div style="text-align: center; width: 75px;">
-              <img src="${c.image_url ? c.image_url.replace('.jpg', '_small.jpg') : ''}" alt="${c.name}" onerror="this.src='${c.image_url}'" style="width: 55px; border-radius: 4px; ${borderStyle}">
-              <div style="font-size: 0.65rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 0.15rem; color: ${nameColor}; font-weight: ${nameWeight};" title="${c.name}">${c.name}</div>
+              <img src="${escapeHTML(c.image_url || '')}" alt="${escapeHTML(c.name)}" onerror="this.onerror=null;this.style.visibility='hidden'" style="width: 55px; border-radius: 4px; ${borderStyle}">
+              <div style="font-size: 0.65rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 0.15rem; color: ${nameColor}; font-weight: ${nameWeight};" title="${escapeHTML(c.name)}">${escapeHTML(c.name)}</div>
             </div>
           `;
         }).join('')}
@@ -600,7 +600,7 @@ if (undoGuessBtn) {
     if (history.length === 0) return;
     const latest = history[0];
     if (latest.isHint && latest.hintType === '최초 힌트') {
-      alert("최초 힌트는 되돌릴 수 없습니다.");
+      showPlayMessage("최초 힌트는 되돌릴 수 없습니다.");
       return;
     }
     history.shift();
