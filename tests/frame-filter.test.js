@@ -1,8 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { allCards } from '../src/cards_data.js';
-import { filterCandidatesByHints, mapFrameType } from '../src/utils.js';
-import { inferRevealedValues } from '../src/session.js';
+import { filterCandidatesByHints, getGuessFeedback, hintsFromFeedback, mapFrameType } from '../src/utils.js';
 
 const monsters = allCards.filter(card => !['spell', 'trap'].includes(card.frameType));
 const revealedEffect = { type: 'direct', stat: 'frameType', value: 'effect', isCorrect: true };
@@ -37,7 +36,7 @@ test('database update preserves API frames and the same event count', () => {
   assert.equal(mapFrameType('Pendulum Effect Fusion Monster'), 'fusion_pendulum');
 });
 
-test('R-Genex Turing O/X judgment matches the in-game count', () => {
+test('R-Genex Turing with its revealed frame matches the in-game count', () => {
   const guess = monsters.find(card => card.nameEn === 'R-Genex Turing');
   const results = {
     frameType: true,
@@ -55,6 +54,16 @@ test('R-Genex Turing O/X judgment matches the in-game count', () => {
     cardId: guess.id,
     batchId: 'r-genex-turing'
   }));
-  const hints = inferRevealedValues(batch, [guess]);
+  assert.equal(filterCandidatesByHints(monsters, batch).length, 21);
+  const hints = [...batch, { type: 'direct', stat: 'frameType', value: 'effect', isCorrect: true, batchId: 'r-genex-turing' }];
   assert.equal(filterCandidatesByHints(monsters, hints).length, 18);
+});
+
+test('revealed Pendulum frame keeps the official Z-ARC example target', () => {
+  const guess = monsters.find(card => card.nameEn === 'The Unstoppable Exodia Incarnate');
+  const target = monsters.find(card => card.nameEn === 'Supreme King Z-ARC');
+  const feedback = getGuessFeedback(guess, target);
+  assert.equal(feedback.matches.frameType, true);
+  assert.equal(feedback.revealed.frameType, 'fusion_pendulum');
+  assert.ok(filterCandidatesByHints(monsters, hintsFromFeedback(guess, feedback, 'zarc')).some(card => card.id === target.id));
 });

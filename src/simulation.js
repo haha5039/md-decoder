@@ -1,6 +1,5 @@
 import { createSolver, sortScores, chooseCriteria } from './solver.js';
 import { filterCandidatesByHints, getRevealedValue, STAT_KEYS, getGuessFeedback, hintsFromFeedback } from './utils.js';
-import { inferRevealedValues } from './session.js';
 
 export function makeScenarios(cards, count = 12, seed = 20260926) {
   let state = seed >>> 0;
@@ -32,8 +31,7 @@ export function simulateScenario(cards, solve, { target, initialStat }, criteria
     used.push(guess.id);
     const feedback = getGuessFeedback(guess, target);
     if (feedback.won) return { success: true, eliminated: false, attempts: attempt, durationMs };
-    const judgmentHints = hintsFromFeedback(guess, feedback, String(attempt)).filter(hint => hint.type === 'guess');
-    hints.push(...inferRevealedValues(judgmentHints, [guess]));
+    hints.push(...hintsFromFeedback(guess, feedback, String(attempt)));
   }
   return { success: false, eliminated: false, attempts: limit, durationMs };
 }

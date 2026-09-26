@@ -43,9 +43,15 @@ export function normalizeCards(english, korean = [], previous = []) {
 }
 
 export async function fetchCardData(url) {
-  const response = await fetch(url, { signal: AbortSignal.timeout(30000) });
-  if (!response.ok) throw new Error(`카드 서버 오류 (${response.status})`);
-  const json = await response.json();
-  if (!Array.isArray(json.data) || !json.data.length) throw new Error('카드 서버가 빈 데이터를 반환했습니다.');
-  return json.data;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30000);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) throw new Error(`카드 서버 오류 (${response.status})`);
+    const json = await response.json();
+    if (!Array.isArray(json.data) || !json.data.length) throw new Error('카드 서버가 빈 데이터를 반환했습니다.');
+    return json.data;
+  } finally {
+    clearTimeout(timer);
+  }
 }

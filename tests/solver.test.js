@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createSolver, sortScores } from '../src/solver.js';
+import { allocateAttempts, chooseCriteria, createSolver, distinctScores, sortScores } from '../src/solver.js';
 import { getGuessFeedback, getValidLevels, getTargetRulesLevel, filterCandidatesByHints, hintsFromFeedback } from '../src/utils.js';
 import { allCards } from '../src/cards_data.js';
 
@@ -13,7 +13,7 @@ function reference(guess, targets, guesses) {
   for (const target of targets) {
     const result = getGuessFeedback(guess, target);
     if (result.won) { wins++; continue; }
-    const key = JSON.stringify(result.matches);
+    const key = JSON.stringify(result);
     if (!buckets.has(key)) buckets.set(key, []);
     buckets.get(key).push(target);
   }
@@ -32,11 +32,11 @@ test('two distinct targets: 50% now, 100% within two submissions', () => {
   for (const score of result.snipes) { close(score.oneShotProb, 0.5); close(score.twoShotProb, 1); }
 });
 
-test('streamlined O/X workflow keeps identical outcomes in one branch', () => {
+test('revealed frame values split otherwise identical O/X outcomes', () => {
   const cards = [card(1, { frameType: 'fusion', atk: 0 }), card(2, { frameType: 'fusion' }), card(3, { frameType: 'fusion_pendulum' })];
   const result = createSolver(cards)({ candidateIds: [2, 3] });
   const score = result.scouts.find(score => score.card.id === 1);
-  close(score.entropy, 0); close(score.expectedRemaining, 2); close(score.twoShotProb, 1);
+  close(score.entropy, 1); close(score.expectedRemaining, 1); close(score.twoShotProb, 1);
 });
 
 test('optimized metrics equal exhaustive reference including duplicates and Pendulum overlaps', () => {
@@ -65,8 +65,31 @@ test('all equivalent targets are a guaranteed win; empty and large states are ex
   const solve = createSolver(cards);
   const result = solve({ candidateIds: cards.map(card => card.id) });
   close(result.snipes[0].oneShotProb, 1); close(result.snipes[0].expectedRemaining, 0);
-  assert.equal(result.twoTurnExact, false); assert.equal(result.snipes[0].twoShotProb, null);
+  assert.equal(result.twoTurnExact, true); assert.equal(result.profileCount, 1); close(result.snipes[0].twoShotProb, 1);
   assert.deepEqual(solve({ candidateIds: [] }).snipes, []);
+});
+
+test('recommendation display removes duplicate statistical profiles', () => {
+  const cards = [card(1), card(2), card(3, { atk: 2000 })];
+  const result = createSolver(cards)({ candidateIds: cards.map(card => card.id) });
+  assert.equal(result.snipes.length, 3);
+  const distinct = distinctScores(result.snipes, 'entropy');
+  assert.equal(distinct.length, 2);
+  assert.equal(distinct.find(score => score.card.atk === 1000).equivalentChoices, 2);
+});
+
+test('two-shot strategy is selected in short attempt windows', () => {
+  assert.equal(chooseCriteria({ attempts: 2, twoTurnExact: true, candidateCount: 20 }), 'twoShot');
+  assert.equal(chooseCriteria({ attempts: 4, twoTurnExact: true, candidateCount: 20 }), 'twoShot');
+  assert.equal(chooseCriteria({ attempts: 5, twoTurnExact: true, candidateCount: 20 }), 'expected');
+  assert.equal(chooseCriteria({ attempts: 1, twoTurnExact: true, candidateCount: 2 }), 'oneShot');
+});
+
+test('attempts are reserved evenly across remaining challenges', () => {
+  assert.equal(allocateAttempts(7, 3), 2);
+  assert.equal(allocateAttempts(4, 4), 1);
+  assert.equal(allocateAttempts(4, 1), 4);
+  assert.equal(allocateAttempts(0, 3), 0);
 });
 
 test('known rules exceptions use correct identities and retain printed zero', () => {

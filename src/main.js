@@ -2,9 +2,9 @@ import './style.css'
 import { allCards as rawCards } from './cards_data.js'
 import { getValidLevels, renderCardStatsHTML, translateAttribute, translateFrame, translateRace, getTargetRulesLevel, filterCandidatesByHints, escapeHTML, formatStat } from './utils.js'
 
-import { sortScores, TWO_TURN_LIMIT, chooseCriteria } from './solver.js';
+import { allocateAttempts, sortScores, distinctScores, TWO_TURN_LIMIT, chooseCriteria } from './solver.js';
 import { normalizeCards, fetchCardData } from './data.js';
-import { budget, createBatchId, inferRevealedValues, parseStatInput, removeInputBatch, saveSession, restoreSession, hasSolvedGuess } from './session.js';
+import { budget, createBatchId, nextChallenge, parseStatInput, removeInputBatch, saveSession, restoreSession, hasSolvedGuess } from './session.js';
 
 import { getCachedCards, saveCachedCards, clearCachedCards } from './db.js'
 
@@ -39,6 +39,9 @@ const infoName = document.getElementById('infoName');
 const infoDetails = document.getElementById('infoDetails');
 const statusToggles = document.querySelectorAll('.status-toggles .btn-toggle');
 const applyGuessBtn = document.getElementById('applyGuessBtn');
+const judgmentProgress = document.getElementById('judgmentProgress');
+const matchedFrame = document.getElementById('matchedFrame');
+const matchedLevel = document.getElementById('matchedLevel');
 
 const candidatesCount = document.getElementById('candidatesCount');
 const visibleCandidatesCount = document.getElementById('visibleCandidatesCount');
@@ -118,15 +121,18 @@ async function initGameData() {
   });
 
   let saved = null;
+  let restoreMessage = '';
   try { saved = restoreSession(localStorage, allCards); } catch { /* Storage can be disabled by the browser. */ }
   if (saved) {
-    hints = inferRevealedValues(saved.hints, allCards);
+    hints = saved.hints;
     totalAttemptsLeft.value = saved.attempts;
     hintsLeft.value = saved.remainingHints;
     problemsLeft.value = saved.problems;
-    document.getElementById('sessionStatus').textContent = '이전 추론을 복원했습니다.';
+    restoreMessage = saved.migrated ? '이전 버전의 부정확한 자동 프레임·레벨 조건을 제거하고 추론을 복원했습니다.' : '이전 추론을 복원했습니다.';
   }
   applyFilters();
+  if (restoreMessage) document.getElementById('sessionStatus').textContent = restoreMessage;
+  if (saved?.migrated) showInputMessage('이전 버전에서 자동으로 단정했던 프레임·레벨 조건을 제거했습니다. O였던 항목의 인게임 공개값을 다시 확인해주세요.');
 }
 
 function updateUI() {
@@ -235,14 +241,16 @@ function renderCandidatePage() {
   renderCandidateList(list.slice(0, candidateLimit), candidateList);
   document.getElementById('showMoreCandidates').hidden = list.length <= candidateLimit;
   const notice = document.getElementById('candidateNotice');
-  notice.hidden = candidates.length > 0;
-  notice.textContent = '조건을 모두 만족하는 카드가 없습니다. 입력한 O/X와 공개 값을 확인하거나 최근 입력을 취소하세요. 데이터에 없는 카드일 수도 있습니다.';
+  notice.hidden = candidates.length > 0 && (!query || list.length > 0);
+  notice.textContent = candidates.length === 0
+    ? '조건을 모두 만족하는 카드가 없습니다. 입력한 O/X와 공개 값을 확인하거나 최근 입력을 취소하세요. 데이터에 없는 카드일 수도 있습니다.'
+    : '남은 후보에서 해당 이름을 찾지 못했습니다.';
 }
 
 function renderHints() {
   appliedHintsList.innerHTML = '';
   hints.forEach((hint, index) => {
-    if (hint.inferred) return;
+    if (hint.inferred || hint.supplemental) return;
     const li = document.createElement('li');
     li.style.display = 'flex';
     li.style.justifyContent = 'space-between';
@@ -262,10 +270,12 @@ function renderHints() {
     } else {
       const resClass = hint.isCorrect ? 'res-correct' : 'res-wrong';
       const resText = hint.isCorrect ? 'O' : 'X';
+      const revealed = hints.find(item => item.supplemental && item.batchId === hint.batchId && item.stat === hint.stat);
+      const revealedText = revealed ? ` → 공개: <span class="stat-val">${escapeHTML(getTranslatedValue(revealed.stat, revealed.value))}</span>` : '';
       hintContent = `
         <span>
           <span class="stat-name">[${escapeHTML(hint.cardName)}]</span>
-          ${getStatNameKR(hint.stat)}: <span class="stat-val">${escapeHTML(getTranslatedValue(hint.stat, hint.value))}</span>
+          ${getStatNameKR(hint.stat)}: <span class="stat-val">${escapeHTML(getTranslatedValue(hint.stat, hint.value))}</span>${revealedText}
         </span>
         <div style="display: flex; align-items: center; gap: 0.5rem;">
           <span class="stat-res ${resClass}">${resText}</span>
@@ -388,6 +398,9 @@ function selectCard(card) {
   showInputMessage('');
 
   selectedCard = card;
+  matchedFrame.value = '';
+  matchedLevel.value = '';
+  document.querySelectorAll('.matched-value').forEach(element => element.classList.add('hidden'));
   selectedCardContainer.classList.remove('hidden');
   selectedCardImg.src = card.image_url || '';
   infoName.textContent = card.name;
@@ -419,6 +432,8 @@ function selectCard(card) {
     btn.classList.remove('active');
     btn.dataset.selected = "false";
   });
+  judgmentProgress.textContent = '0 / 6';
+  applyGuessBtn.disabled = true;
 
   // Scroll to input section when selecting a card
   const target = document.getElementById('guessResultSection');
@@ -438,8 +453,41 @@ statusToggles.forEach(btn => {
     });
     btn.classList.add('active');
     btn.dataset.selected = "true";
+    refreshMatchedInputs();
   });
 });
+
+function refreshMatchedInputs() {
+  const selected = [...document.querySelectorAll('.status-row')].flatMap(row => {
+    const active = row.querySelector('.btn-toggle.active');
+    if (!active || !selectedCard) return [];
+    const stat = row.dataset.stat;
+    return [{ type: 'guess', stat, isCorrect: active.dataset.val === 'correct', value: stat === 'level' ? getValidLevels(selectedCard) : selectedCard[stat] }];
+  });
+  const provisional = selected.length === 6 ? filterCandidatesByHints(candidates, selected) : null;
+  const winning = selected.length === 6 && selected.every(hint => hint.isCorrect);
+  judgmentProgress.textContent = `${selected.length} / 6`;
+  applyGuessBtn.disabled = selected.length !== 6;
+  for (const [stat, input] of [['frameType', matchedFrame], ['level', matchedLevel]]) {
+    const reveal = document.querySelector(`[data-reveal="${stat}"]`);
+    const matched = selected.some(hint => hint.stat === stat && hint.isCorrect);
+    if (!matched || winning) {
+      reveal.classList.add('hidden');
+      input.value = '';
+      continue;
+    }
+    if (provisional?.length) {
+      const values = [...new Set(provisional.map(card => stat === 'level' ? getTargetRulesLevel(card) : card.frameType))];
+      if (values.length === 1) {
+        input.value = values[0];
+        reveal.classList.add('hidden');
+        continue;
+      }
+      if (!values.includes(stat === 'level' && input.value !== '' ? Number(input.value) : input.value)) input.value = '';
+    }
+    reveal.classList.remove('hidden');
+  }
+}
 
 applyGuessBtn.addEventListener('click', () => {
   if (!selectedCard) return;
@@ -471,16 +519,40 @@ applyGuessBtn.addEventListener('click', () => {
     }
   });
   
-  if (newHints.length === 0) {
-    showInputMessage("최소 1개 이상의 판정 결과를 선택해주세요.");
+  if (newHints.length !== 6) {
+    showInputMessage('6개 항목의 O/X를 모두 선택해주세요. 아직 도전 횟수는 차감하지 않았습니다.');
     return;
   }
-  
-  const completedHints = inferRevealedValues(newHints, [selectedCard]);
+  const provisionalCandidates = filterCandidatesByHints(candidates, newHints);
+  if (!provisionalCandidates.length) {
+    showInputMessage('이 O/X 조합을 만족하는 카드가 없습니다. 입력을 다시 확인해주세요. 아직 도전 횟수는 차감하지 않았습니다.');
+    return;
+  }
+  const isWinningGuess = newHints.every(hint => hint.isCorrect);
+  for (const [stat, input] of isWinningGuess ? [] : [['frameType', matchedFrame], ['level', matchedLevel]]) {
+    if (!newHints.some(hint => hint.stat === stat && hint.isCorrect)) continue;
+    const possibleValues = [...new Set(provisionalCandidates.map(card => stat === 'level' ? getTargetRulesLevel(card) : card.frameType))];
+    let revealedValue;
+    try {
+      revealedValue = input.value === '' && possibleValues.length === 1 ? possibleValues[0] : parseStatInput(input.value, stat);
+    } catch (error) {
+      showInputMessage(error.message);
+      return;
+    }
+    if (revealedValue === undefined) {
+      showInputMessage(`${getStatNameKR(stat)}이 O이므로 인게임에 공개된 실제 값을 선택해주세요. 아직 도전 횟수는 차감하지 않았습니다.`);
+      return;
+    }
+    if (!possibleValues.includes(revealedValue)) {
+      showInputMessage(`선택한 ${getStatNameKR(stat)} 값이 O/X 결과와 함께 성립하지 않습니다. 인게임 표시를 다시 확인해주세요.`);
+      return;
+    }
+    newHints.push({ type: 'direct', stat, value: revealedValue, isCorrect: true, isExact: true, supplemental: true, batchId });
+  }
   newHints[0].attemptCost = 1;
   totalAttemptsLeft.value = budget(totalAttemptsLeft.value) - 1;
   
-  hints = [...hints, ...completedHints];
+  hints = [...hints, ...newHints];
   applyFilters();
   
   selectedCardContainer.classList.add('hidden');
@@ -504,6 +576,9 @@ function applyFilters() {
   candidateLimit = 48;
   cancelCalculation();
   calculatedResults = null;
+  const twoTurnButton = recCriteriaGroup.querySelector('[data-criteria="twoShot"]');
+  twoTurnButton.disabled = true;
+  twoTurnButton.title = '현재 후보로 추천을 계산하면 사용할 수 있습니다.';
   updateUI();
   recContainer.classList.add('hidden');
   snipeList.innerHTML = '';
@@ -513,7 +588,8 @@ function applyFilters() {
   updateHintStrategy(false);
 }
 
-resetBtn.addEventListener('click', () => {
+function resetChallenge(preserveResources = false) {
+  const resources = preserveResources ? nextChallenge({ attempts: totalAttemptsLeft.value, remainingHints: hintsLeft.value, problems: problemsLeft.value }) : { attempts: 4, remainingHints: 1, problems: 1 };
   hints = [];
   candidates = [...allCards];
   calculatedResults = null;
@@ -543,15 +619,22 @@ resetBtn.addEventListener('click', () => {
     btn.classList.remove('active');
     btn.dataset.selected = "false";
   });
+  judgmentProgress.textContent = '0 / 6';
+  applyGuessBtn.disabled = true;
+  matchedFrame.value = '';
+  matchedLevel.value = '';
+  document.querySelectorAll('.matched-value').forEach(element => element.classList.add('hidden'));
   
   // Reset numeric settings (0. 남은 횟수 설정)
-  if (hintsLeft) hintsLeft.value = "1";
-  if (totalAttemptsLeft) totalAttemptsLeft.value = "4";
-  if (problemsLeft) problemsLeft.value = "1";
+  hintsLeft.value = resources.remainingHints;
+  totalAttemptsLeft.value = resources.attempts;
+  problemsLeft.value = resources.problems;
   
   document.getElementById('candidateSearch').value = '';
   applyFilters();
-});
+}
+resetBtn.addEventListener('click', () => resetChallenge());
+document.getElementById('nextChallengeBtn').addEventListener('click', () => resetChallenge(true));
 
 if (undoHintBtn) {
   undoHintBtn.addEventListener('click', undoLastInput);
@@ -564,10 +647,10 @@ if (undoHintBtn) {
 // CRITERIA SELECTION LOGIC
 // ------------------------------------------------------------------
 const criteriaDescriptions = {
-  entropy: '<strong>기대 정보량:</strong> 실제로 공개되는 값에 따라 결과를 나누어 정보량을 최대화합니다. 최단 해결 횟수를 보장하지는 않습니다.',
+  entropy: '<strong>기대 정보량:</strong> O/X와 일치 시 공개되는 실제 값을 포함한 결과의 정보량을 최대화합니다. 최단 해결 횟수를 보장하지는 않습니다.',
   minimax: '<strong>최악 잔여 최소:</strong> 실패했을 때 남을 수 있는 가장 큰 후보군을 줄입니다. 정답이면 잔여 수는 0입니다.',
   oneShot: '<strong>즉시 정답 확률:</strong> 이번 제출로 6개 항목이 모두 일치할 확률입니다. 후보 1장만 남기고 틀린 경우는 성공에 포함하지 않습니다.',
-  twoShot: '<strong>2회 내 성공 확률:</strong> 첫 판정 후 최선의 다음 카드를 제출할 때의 성공 확률입니다. 후보 60장 이하에서 전수 계산하며, 추가 힌트는 사용하지 않는 조건입니다.',
+  twoShot: '<strong>2회 내 성공 확률:</strong> 첫 판정 후 최선의 다음 카드를 제출할 때의 성공 확률입니다. 서로 구분되는 후보 유형이 60개 이하이면 카드 수가 많아도 전수 계산합니다. 추가 힌트는 사용하지 않는 조건입니다.',
   expected: '<strong>평균 잔여 최소:</strong> 이번 제출 후 남는 후보 카드 수의 평균을 줄입니다. 정답이면 잔여 수는 0입니다.'
 };
 
@@ -652,11 +735,18 @@ function renderRecommendationList(list, container) {
           <span>${entropyText}</span>
           <span>${oneShotText}</span>
         </div>`;
-    } else if ((activeCriteria === 'oneShot' || activeCriteria === 'twoShot')) {
+    } else if (activeCriteria === 'oneShot') {
       detailHtml = `
         <div class="card-item-info" style="font-weight:bold; color:#4ade80; margin-bottom: 0.15rem; font-size: 0.72rem;">${oneShotText}</div>
         <div class="card-item-stats" style="font-size: 0.68rem; color: var(--text-muted); display: flex; flex-direction: column; gap: 0.05rem;">
           <span>${entropyText}</span>
+          <span>${expectedText}</span>
+        </div>`;
+    } else if (activeCriteria === 'twoShot') {
+      detailHtml = `
+        <div class="card-item-info" style="font-weight:bold; color:#4ade80; margin-bottom: 0.15rem; font-size: 0.72rem;">2회 내 ${(item.twoShotProb * 100).toFixed(2)}%</div>
+        <div class="card-item-stats" style="font-size: 0.68rem; color: var(--text-muted); display: flex; flex-direction: column; gap: 0.05rem;">
+          <span>${oneShotText}</span>
           <span>${expectedText}</span>
         </div>`;
     } else if (activeCriteria === 'expected') {
@@ -671,8 +761,9 @@ function renderRecommendationList(list, container) {
     div.innerHTML = `
       <img src="${imgUrl}" alt="${escapeHTML(card.name)}" loading="lazy" onerror="this.onerror=null;this.style.visibility='hidden'">
       <div class="card-item-title" title="${escapeHTML(card.name)}">${escapeHTML(card.name)}</div>
+      ${item.equivalentChoices > 1 ? `<div class="card-item-stats">동일 판정 ${item.equivalentChoices}장 중 대표</div>` : ''}
       ${detailHtml}
-      <div class="card-item-info">${oneShotText}${item.twoShotProb === null ? '' : ` · 2회 내 ${(item.twoShotProb * 100).toFixed(2)}%`}</div>
+      ${['oneShot', 'twoShot'].includes(activeCriteria) ? '' : `<div class="card-item-info">${oneShotText}${item.twoShotProb === null ? '' : ` · 2회 내 ${(item.twoShotProb * 100).toFixed(2)}%`}</div>`}
       <div class="candidate-stats" style="border-top: 1px dashed rgba(255,255,255,0.08); padding-top: 0.25rem; margin-top: 0.25rem;">
         <div class="candidate-stats-row">
           <span class="stat-badge frame-${card.frameType.toLowerCase().replace('_pendulum', '')}" style="font-size: 0.65rem; padding: 0.1rem 0.35rem;">${escapeHTML(translateFrame(card.frameType))}</span>
@@ -695,21 +786,38 @@ function renderRecommendationList(list, container) {
 function renderRecommendations() {
   if (!calculatedResults) return;
 
-  const sortedSnipes = sortRecommendations(calculatedResults.snipes, activeCriteria);
-  const sortedScouts = sortRecommendations(calculatedResults.scouts, activeCriteria);
+  const sortedSnipes = distinctScores(calculatedResults.snipes, activeCriteria);
+  const sortedScouts = distinctScores(calculatedResults.scouts, activeCriteria);
   
   renderRecommendationList(sortedSnipes, snipeList);
   renderRecommendationList(sortedScouts, scoutList);
 }
 
 let recommendationResizeFrame = 0;
-const recommendationResizeObserver = new ResizeObserver(() => {
+const recommendationWidths = new WeakMap();
+const handleRecommendationResize = entries => {
   if (!calculatedResults || recContainer.classList.contains('hidden')) return;
+  let changed = false;
+  for (const { target, contentRect } of entries) {
+    if (recommendationWidths.get(target) !== contentRect.width) {
+      recommendationWidths.set(target, contentRect.width);
+      changed = true;
+    }
+  }
+  if (!changed) return;
   cancelAnimationFrame(recommendationResizeFrame);
   recommendationResizeFrame = requestAnimationFrame(renderRecommendations);
-});
-recommendationResizeObserver.observe(snipeList);
-recommendationResizeObserver.observe(scoutList);
+};
+if ('ResizeObserver' in window) {
+  const recommendationResizeObserver = new ResizeObserver(handleRecommendationResize);
+  recommendationResizeObserver.observe(snipeList);
+  recommendationResizeObserver.observe(scoutList);
+} else {
+  window.addEventListener('resize', () => handleRecommendationResize([
+    { target: snipeList, contentRect: snipeList.getBoundingClientRect() },
+    { target: scoutList, contentRect: scoutList.getBoundingClientRect() }
+  ]));
+}
 
 recCriteriaGroup.addEventListener('click', (e) => {
   const btn = e.target.closest('.btn-toggle');
@@ -728,6 +836,12 @@ function cancelCalculation() {
   calcRecBtn.textContent = '최적의 카드 계산';
 }
 
+function hydrateSolverResult(result) {
+  const cardsById = new Map(allCards.map(card => [card.id, card]));
+  const hydrate = item => ({ ...item, card: cardsById.get(item.cardId) });
+  return { ...result, snipes: result.snipes.map(hydrate), scouts: result.scouts.map(hydrate) };
+}
+
 calcRecBtn.addEventListener('click', () => {
   if (!candidates.length || hasSolvedGuess(hints)) return;
   cancelCalculation();
@@ -740,11 +854,11 @@ calcRecBtn.addEventListener('click', () => {
       if (data.id !== calculationId) return;
       calcRecBtn.disabled = false; calcRecBtn.textContent = '최적의 카드 계산';
       if (data.error) { strategyMsg.textContent = `계산 실패: ${data.error}. 다시 시도하세요.`; return; }
-      calculatedResults = data.result;
+      calculatedResults = hydrateSolverResult(data.result);
       recContainer.classList.remove('hidden');
       const twoTurnButton = recCriteriaGroup.querySelector('[data-criteria="twoShot"]');
       twoTurnButton.disabled = !calculatedResults.twoTurnExact;
-      twoTurnButton.title = calculatedResults.twoTurnExact ? '' : `후보 ${TWO_TURN_LIMIT}장 이하에서 계산합니다.`;
+      twoTurnButton.title = calculatedResults.twoTurnExact ? '' : `서로 구분되는 후보 유형 ${TWO_TURN_LIMIT}개 이하에서 계산합니다.`;
       updateHintStrategy(true);
       renderRecommendations();
     };
@@ -765,7 +879,8 @@ function updateHintStrategy(autoSelect = false) {
   const attempts = budget(totalAttemptsLeft.value);
   const remainingHints = budget(hintsLeft.value);
   const problems = budget(problemsLeft.value, 1);
-  const recommended = chooseCriteria({ attempts, twoTurnExact: calculatedResults?.twoTurnExact, candidateCount: candidates.length });
+  const currentBudget = allocateAttempts(attempts, problems);
+  const recommended = chooseCriteria({ attempts: currentBudget, twoTurnExact: calculatedResults?.twoTurnExact, candidateCount: candidates.length });
   if (autoSelect || (activeCriteria === 'twoShot' && !calculatedResults?.twoTurnExact)) {
     activeCriteria = recommended;
     recCriteriaGroup.querySelectorAll('.btn-toggle').forEach(button => button.classList.toggle('active', button.dataset.criteria === activeCriteria));
@@ -774,14 +889,15 @@ function updateHintStrategy(autoSelect = false) {
   const messages = [];
   if (hasSolvedGuess(hints) && candidates.length) {
     calcRecBtn.disabled = true;
-    strategyMsg.textContent = '기록한 도전의 6개 항목이 모두 일치합니다. 정답으로 판정된 문제입니다. 초기화 후 다음 문제의 실제 남은 횟수를 입력하세요.';
+    strategyMsg.textContent = '정답입니다. 다음 문제 버튼을 누르면 남은 도전·힌트 횟수를 유지한 채 새 문제를 시작합니다.';
     return;
   }
   if (!candidates.length) messages.push('일치하는 후보가 없습니다. 최근 입력을 취소하거나 공개 값을 확인하세요.');
-  else if (!attempts) messages.push('남은 도전이 없습니다. 다음 횟수 지급 후 제출할 수 있습니다.');
+  else if (!currentBudget) messages.push('다른 문제에 최소 1회씩 남기면 현재 문제에 쓸 도전이 없습니다. 힌트를 사용하거나 자원 배분을 조정하세요.');
   else if (candidates.length === 1) messages.push(`후보가 1장입니다. [${escapeHTML(candidates[0].name)}] 카드로 제출하세요.`);
-  else if (attempts === 1) messages.push('마지막 도전은 <strong>즉시 정답 확률</strong>이 가장 높은 카드를 고르세요. 후보를 좁혀도 추가로 제출할 수 없습니다.');
-  else if (calculatedResults?.twoTurnExact) messages.push('<strong>2회 내 성공 확률</strong>은 첫 결과별 최선의 다음 제출까지 계산합니다.');
+  else if (currentBudget === 1 && remainingHints) messages.push(`현재 문제에 배정 가능한 도전이 1회입니다. 남은 힌트 ${remainingHints}회로 후보를 먼저 줄인 뒤 즉시 정답 확률을 비교하세요.`);
+  else if (currentBudget === 1) messages.push('현재 문제의 마지막 도전은 <strong>즉시 정답 확률</strong>이 가장 높은 카드를 고르세요. 후보를 좁혀도 추가로 제출할 수 없습니다.');
+  else if (currentBudget <= 4 && calculatedResults?.twoTurnExact) messages.push('<strong>2회 내 성공 확률</strong>은 첫 결과별 최선의 다음 제출까지 계산해 짧은 도전 구간의 해결 가능성을 높입니다.');
   else messages.push('기대 정보량과 평균 잔여 수로 후보를 좁히고, 도전이 적어지면 성공 확률을 비교하세요.');
   if (calculatedResults) {
     const best = sortScores([...calculatedResults.snipes, ...calculatedResults.scouts], activeCriteria)[0];
@@ -789,7 +905,7 @@ function updateHintStrategy(autoSelect = false) {
     if (remainingHints && calculatedResults.hint) messages.push(`무작위 힌트 1회 후 예상 후보: ${calculatedResults.hint.expectedRemaining.toFixed(1)}장 (미공개 항목이 같은 확률로 선택된다고 가정).`);
     messages.push(`후보 카드가 같은 확률로 정답이라는 가정 · 계산 ${(calculatedResults.durationMs / 1000).toFixed(2)}초`);
   }
-  if (problems > 1) messages.push(`남은 ${problems}문제가 도전 ${attempts}회를 공유합니다. 표시한 성공 확률은 현재 문제 기준입니다.`);
+  if (problems > 1) messages.push(`남은 ${problems}문제가 도전 ${attempts}회를 공유해 현재 문제에는 ${currentBudget}회를 균등 배정했습니다.`);
   strategyMsg.innerHTML = messages.map(message => `<p>${message}</p>`).join('');
 }
 

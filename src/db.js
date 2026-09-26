@@ -3,6 +3,7 @@ const DB_NAME = 'MDDecoderDB';
 const STORE_NAME = 'cards_store';
 // Ignore old caches whose API frames were overwritten from unreliable type labels.
 const KEY_NAME = 'cards_data_v2';
+const LEGACY_KEY_NAME = 'cards_data';
 
 function transaction(mode, action) {
   return new Promise((resolve, reject) => {
@@ -38,5 +39,8 @@ export function saveCachedCards(cards) {
   return transaction('readwrite', store => store.put(cards, KEY_NAME));
 }
 export function clearCachedCards() {
-  return transaction('readwrite', store => store.delete(KEY_NAME));
+  return transaction('readwrite', store => {
+    store.delete(LEGACY_KEY_NAME);
+    return store.delete(KEY_NAME);
+  });
 }

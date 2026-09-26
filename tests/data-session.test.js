@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizeCards, validateCards } from '../src/data.js';
-import { budget, createBatchId, inferRevealedValues, parseStatInput, removeInputBatch, restoreSession, saveSession, hasSolvedGuess } from '../src/session.js';
+import { budget, createBatchId, nextChallenge, parseStatInput, removeInputBatch, restoreSession, saveSession, hasSolvedGuess } from '../src/session.js';
 import { escapeHTML } from '../src/utils.js';
 
 const api = { id: 1, name: 'Card', type: 'Effect Monster', frameType: 'effect', attribute: 'DARK', level: 0, race: 'Dragon', atk: -1, def: 0 };
@@ -25,6 +25,7 @@ test('recording free revelations never consumes or refunds paid hints', () => {
   assert.deepEqual(removeInputBatch(hints, 'g'), { hints: [hints[2]], attemptsRefund: 1, hintsRefund: 0 });
   assert.equal(removeInputBatch(hints, 'h').hintsRefund, 1);
   assert.equal(budget(-1), 0); assert.equal(budget('abc'), 0); assert.equal(budget(0, 1), 1);
+  assert.equal(budget(10000), 999);
 });
 
 test('batch IDs work without secure-context browser APIs', () => {
@@ -59,15 +60,19 @@ test('a complete correct submission ends the challenge; partial rows do not', ()
   assert.equal(hasSolvedGuess(hints.map(hint => ({ ...hint, isCorrect: hint.stat !== 'atk' }))), false);
 });
 
-test('matching frame and level automatically add exact revealed values', () => {
-  const card = { ...api, id: 7, frameType: 'effect', level: 2 };
-  const batch = [
-    { type: 'guess', stat: 'frameType', value: 'effect', isCorrect: true, cardId: 7, batchId: 'g' },
-    { type: 'guess', stat: 'level', value: [2], isCorrect: true, cardId: 7, batchId: 'g' },
-    { type: 'guess', stat: 'attribute', value: 'DARK', isCorrect: false, cardId: 7, batchId: 'g' }
-  ];
-  const completed = inferRevealedValues(batch, [card]);
-  assert.ok(completed.some(hint => hint.type === 'direct' && hint.stat === 'frameType' && hint.value === 'effect'));
-  assert.ok(completed.some(hint => hint.type === 'direct' && hint.stat === 'level' && hint.value === 2));
-  assert.equal(inferRevealedValues(completed, [card]).length, completed.length);
+test('session restore removes unsafe inferred values from older versions', () => {
+  const values = new Map();
+  values.set('md-decoder-session-v1', JSON.stringify({ hints: [
+    { type: 'guess', stat: 'frameType', value: 'fusion', isCorrect: true, cardId: 1, batchId: 'g' },
+    { type: 'direct', stat: 'frameType', value: 'fusion', isCorrect: true, inferred: true, batchId: 'g' }
+  ], attempts: 3, remainingHints: 1, problems: 2 }));
+  const restored = restoreSession({ getItem: key => values.get(key) }, [api]);
+  assert.equal(restored.hints.length, 1);
+  assert.equal(restored.hints[0].type, 'guess');
+  assert.equal(restored.migrated, true);
+});
+
+test('next challenge preserves resources and decreases remaining problems', () => {
+  assert.deepEqual(nextChallenge({ attempts: 7, remainingHints: 2, problems: 3 }), { hints: [], attempts: 7, remainingHints: 2, problems: 2 });
+  assert.equal(nextChallenge({ attempts: 0, remainingHints: 0, problems: 1 }).problems, 1);
 });

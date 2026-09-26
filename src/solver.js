@@ -14,11 +14,17 @@ const matchMask = (guess, target) =>
   ((guess.card.def === target.card.def) ? 32 : 0);
 
 export function createSolver(cards) {
+  const frameValues = [...new Set(cards.map(card => card.frameType))];
+  const levelValues = [...new Set(cards.map(getTargetRulesLevel))];
   const records = cards.map(card => ({
     card, key: signature(card), frameMask: mask(card),
-    levelMask: getValidLevels(card).reduce((bits, level) => bits | (1 << level), 0)
+    levelMask: getValidLevels(card).reduce((bits, level) => bits | (1 << level), 0),
+    frameCode: frameValues.indexOf(card.frameType) + 1,
+    levelCode: levelValues.indexOf(getTargetRulesLevel(card)) + 1
   }));
-  const bucketCapacity = 64;
+  const frameStride = 64;
+  const levelStride = frameStride * (frameValues.length + 1);
+  const bucketCapacity = levelStride * (levelValues.length + 1);
 
   return function solve({ candidateIds, guessedIds = [], revealedStats = [] }) {
     const started = performance.now();
@@ -40,7 +46,7 @@ export function createSolver(cards) {
       availableByKey.get(record.key).push(record);
     }
     const groups = [...availableByKey.values()];
-    const twoTurnExact = total > 0 && total <= TWO_TURN_LIMIT;
+    const twoTurnExact = total > 0 && targets.length <= TWO_TURN_LIMIT;
     const scores = [];
     if (!total) return { snipes: [], scouts: [], twoTurnExact: false, total, hint: null, durationMs: 0 };
     const counts = new Int32Array(bucketCapacity);
@@ -62,8 +68,9 @@ export function createSolver(cards) {
           if (twoTurnExact) winBits |= targetBits[j];
           continue;
         }
-        // The helper's streamlined workflow records only the six O/X outcomes.
-        const key = profile;
+        // Matching frame/level properties reveal the target's exact value.
+        const key = profile + ((profile & 1) ? target.frameCode * frameStride : 0)
+          + ((profile & 2) ? target.levelCode * levelStride : 0);
         if (counts[key] === 0) touched.push(key);
         counts[key] += target.weight;
         if (twoTurnExact) branches.set(key, (branches.get(key) || 0n) | targetBits[j]);
@@ -115,7 +122,7 @@ export function createSolver(cards) {
     const snipes = [], scouts = [];
     for (const { group, branches, winning, ...score } of scores) {
       for (const { card } of group) {
-        const item = { card, ...score };
+        const item = { card, profileKey: group[0].key, equivalentChoices: group.length, ...score };
         // A card outside the candidate set may still win via partial-frame matching.
         (score.oneShotProb > 0 ? snipes : scouts).push(item);
       }
@@ -133,7 +140,7 @@ export function createSolver(cards) {
       });
       hint = { unknownCount: unknown.length, expectedRemaining: outcomes.reduce((sum, count) => sum + count, 0) / unknown.length };
     }
-    return { snipes, scouts, twoTurnExact, total, hint, durationMs: performance.now() - started };
+    return { snipes, scouts, twoTurnExact, profileCount: targets.length, total, hint, durationMs: performance.now() - started };
   };
 }
 
@@ -151,6 +158,22 @@ export function sortScores(list, criteria) {
 
 export function chooseCriteria({ attempts, twoTurnExact, candidateCount }) {
   if (attempts <= 1) return 'oneShot';
-  if (twoTurnExact) return 'twoShot';
+  if (attempts <= 4 && twoTurnExact) return 'twoShot';
   return candidateCount <= TWO_TURN_LIMIT ? 'expected' : 'entropy';
+}
+
+export function allocateAttempts(totalAttempts, problemsLeft) {
+  const total = Number.isFinite(Number(totalAttempts)) ? Math.max(0, Math.floor(Number(totalAttempts))) : 0;
+  const problems = Number.isFinite(Number(problemsLeft)) ? Math.max(1, Math.floor(Number(problemsLeft))) : 1;
+  return problems > 1 ? Math.floor(total / problems) : total;
+}
+
+export function distinctScores(list, criteria) {
+  const seen = new Set();
+  return sortScores(list, criteria).filter(score => {
+    const key = score.profileKey ?? score.card.id;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
