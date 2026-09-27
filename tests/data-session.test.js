@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mergeMasterDuelCards, normalizeCards, validateCards } from '../src/data.js';
+import { isCardDecoderEligible, mergeMasterDuelCards, normalizeCards, validateCards } from '../src/data.js';
 import { applyAutomaticMatches, budget, createBatchId, nextChallenge, parseStatInput, removeInputBatch, restoreSession, saveSession, hasSolvedGuess } from '../src/session.js';
 import { escapeHTML } from '../src/utils.js';
 
@@ -37,6 +37,36 @@ test('hybrid merge preserves an existing alternate-art card ID', () => {
   const [card] = mergeMasterDuelCards([{ en_name: 'Card', ko_name: '카드' }], [detail], [{ ...api, id: 10, nameEn: 'Card', name: '기존 카드' }]);
   assert.equal(card.id, 10);
   assert.equal(card.image_url, 'https://example.com/10.jpg');
+});
+
+test('collaboration campaign records are excluded by metadata', () => {
+  assert.equal(isCardDecoderEligible({ releases: '"Power Pros" Collab Campaign; February 24, 2023' }), false);
+  assert.equal(isCardDecoderEligible({ releases: 'Legacy Pack; January 27, 2026' }), true);
+});
+
+test('same-name Master Duel variants remain separate cards', () => {
+  const ritual = { ...api, id: 10, name: 'Black Luster Soldier', type: 'Ritual Monster', frameType: 'ritual', level: 8, race: 'Warrior', atk: 3000, def: 2500 };
+  const records = [
+    { title: 'Black Luster Soldier (Master Duel Normal)', main: 'Black Luster Soldier (Normal)', en_name: 'Black Luster Soldier', ko_name: '카오스 솔저', types: 'Warrior / Normal', attribute: 'EARTH', level: '8', atk: '3000', def: '2500', yugipedia_page_id: 1163701 },
+    { title: 'Black Luster Soldier (Master Duel)', en_name: 'Black Luster Soldier', ko_name: '카오스 솔저', types: 'Warrior / Ritual', attribute: 'EARTH', level: '8', atk: '3000', def: '2500', yugipedia_page_id: 713774 }
+  ];
+  const cards = mergeMasterDuelCards(records, [ritual]);
+  assert.equal(cards.length, 2);
+  assert.deepEqual(new Set(cards.map(card => card.frameType)), new Set(['normal', 'ritual']));
+  assert.equal(cards.find(card => card.frameType === 'normal').id, 1_501_163_701);
+});
+
+test('normalized name collisions are resolved by card frame', () => {
+  const details = [
+    { ...api, id: 1, name: 'Rai-Mei', frameType: 'effect', type: 'Effect Monster', race: 'Thunder' },
+    { ...api, id: 2, name: 'Raimei', frameType: 'spell', type: 'Spell Card', race: 'Normal', attribute: null, level: null, atk: null, def: null }
+  ];
+  const records = [
+    { title: 'Rai-Mei (Master Duel)', en_name: 'Rai-Mei', ko_name: 'RAI－MEI', types: 'Thunder / Effect', attribute: 'LIGHT', level: '3', atk: '1400', def: '1200', yugipedia_page_id: 812743 },
+    { title: 'Raimei (Master Duel)', en_name: 'Raimei', ko_name: '뇌명', card_type: 'Spell', property: 'Normal', yugipedia_page_id: 712744 }
+  ];
+  const cards = mergeMasterDuelCards(records, details);
+  assert.deepEqual(cards.map(card => [card.id, card.frameType]), [[1, 'effect'], [2, 'spell']]);
 });
 
 test('recording free revelations never consumes or refunds paid hints', () => {

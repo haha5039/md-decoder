@@ -5,7 +5,7 @@ export const YGOPRO_ALL_DATA_URL = 'https://db.ygoprodeck.com/api/v7/cardinfo.ph
 
 const MASTER_DUEL_NAME_ALIASES = new Map(Object.entries({
   'Fairy Tale Tails': 'Fairy Tail Tales',
-  'Layer 19 "Sudden Incursion! Super Quantum Black!!"': 'Super Quantum Black Layer',
+  'Layer 19 "Sudden Incursion! Super Quantum Black!!"': 'Layer 19: "Preventing the Invasion! The Pitch-Black Super Quantum!!"',
   'El Shaddoll Meshachrer': 'El Shaddoll Meshahrail',
   'Thorns of Violet Poison': 'Thorn Fangs of Violet Poison',
   'Arrow of Regulus': "Regulus' Arrow",
@@ -16,6 +16,10 @@ const MASTER_DUEL_NAME_ALIASES = new Map(Object.entries({
   'Synch Realm': 'Synchronized Realm',
   'Saiba the Soldier Swordsmith': 'Saiba the Fighting Swordsmith'
 }));
+
+const MASTER_DUEL_IMAGE_OVERRIDES = new Map([
+  ['Black Luster Soldier (Normal)', 'https://s3.duellinksmeta.com/cards/693f7ea0ce40358adaf90139_w420.webp']
+]);
 
 const FRAMES = new Set(['normal', 'effect', 'fusion', 'synchro', 'xyz', 'link', 'ritual',
   'normal_pendulum', 'effect_pendulum', 'fusion_pendulum', 'synchro_pendulum', 'xyz_pendulum', 'ritual_pendulum', 'spell', 'trap']);
@@ -65,29 +69,115 @@ export function normalizeCardName(value) {
     .replace(/ω/g, 'omega').replace(/β/g, 'beta');
 }
 
+export function isCardDecoderEligible(source) {
+  return !/collab campaign/i.test(source?.releases || '');
+}
+
+function sourceNumber(value, fallback = null) {
+  if (value === '?' || value === '-1') return -1;
+  const number = Number(value);
+  return Number.isInteger(number) ? number : fallback;
+}
+
+function cardFromMasterDuelSource(source) {
+  if (source.card_type === 'Spell' || source.card_type === 'Trap') {
+    const frameType = source.card_type.toLowerCase();
+    return {
+      id: 1_500_000_000 + Number(source.yugipedia_page_id),
+      name: source.ko_name || source.en_name,
+      nameEn: source.en_name,
+      frameType,
+      attribute: null,
+      level: null,
+      race: source.property || 'Normal',
+      type: `${source.card_type} Card`,
+      atk: null,
+      def: null,
+      image_url: MASTER_DUEL_IMAGE_OVERRIDES.get(source.main) || null
+    };
+  }
+  const parts = String(source.types || '').split(' / ').filter(Boolean);
+  const race = parts[0] || null;
+  const tags = new Set(parts.slice(1).map(part => part.toLowerCase()));
+  const isPendulum = tags.has('pendulum');
+  let frameType = tags.has('link') ? 'link'
+    : tags.has('xyz') ? 'xyz'
+      : tags.has('synchro') ? 'synchro'
+        : tags.has('fusion') ? 'fusion'
+          : tags.has('ritual') ? 'ritual'
+            : tags.has('normal') ? 'normal' : 'effect';
+  if (isPendulum && frameType !== 'link') frameType += '_pendulum';
+  const typeName = frameType === 'link' ? 'Link Monster'
+    : frameType.startsWith('xyz') ? 'XYZ Monster'
+      : frameType.startsWith('synchro') ? 'Synchro Monster'
+        : frameType.startsWith('fusion') ? 'Fusion Monster'
+          : frameType.startsWith('ritual') ? 'Ritual Monster'
+            : frameType.startsWith('normal') ? 'Normal Monster' : 'Effect Monster';
+  const linkValue = source.link_arrows ? String(source.link_arrows).split(',').length : null;
+  return {
+    id: 1_500_000_000 + Number(source.yugipedia_page_id),
+    name: source.ko_name || source.en_name,
+    nameEn: source.en_name,
+    frameType,
+    attribute: source.attribute || null,
+    level: sourceNumber(source.level, linkValue),
+    race,
+    type: typeName,
+    atk: sourceNumber(source.atk),
+    def: frameType === 'link' ? null : sourceNumber(source.def),
+    image_url: MASTER_DUEL_IMAGE_OVERRIDES.get(source.main) || null
+  };
+}
+
 export function mergeMasterDuelCards(masterDuelRecords, ygoproCards, previous = []) {
   if (!Array.isArray(masterDuelRecords) || !masterDuelRecords.length) throw new Error('Master Duel 기준 데이터를 받지 못했습니다.');
   if (!Array.isArray(ygoproCards) || !ygoproCards.length) throw new Error('카드 상세 데이터를 받지 못했습니다.');
   const byName = new Map();
   for (const card of ygoproCards) {
     const key = normalizeCardName(card.name);
-    if (key && !byName.has(key)) byName.set(key, card);
+    if (!key) continue;
+    if (!byName.has(key)) byName.set(key, []);
+    byName.get(key).push(card);
   }
   const previousNames = new Map(previous.map(card => [card.id, card.name]));
-  const previousByName = new Map(previous.map(card => [normalizeCardName(card.nameEn), card]));
-  const seenNames = new Set();
+  const previousByName = new Map();
+  for (const card of previous) {
+    const key = normalizeCardName(card.nameEn);
+    if (!previousByName.has(key)) previousByName.set(key, []);
+    previousByName.get(key).push(card);
+  }
+  const seenSources = new Set();
   const seenIds = new Set();
   const cards = [];
   const unmatched = [];
   for (const source of masterDuelRecords) {
-    if (!source?.en_name || seenNames.has(source.en_name)) continue;
-    seenNames.add(source.en_name);
+    if (!source?.en_name || !isCardDecoderEligible(source)) continue;
+    const sourceKey = source.title || `${source.en_name}:${source.main || ''}`;
+    if (seenSources.has(sourceKey)) continue;
+    seenSources.add(sourceKey);
     const lookupName = MASTER_DUEL_NAME_ALIASES.get(source.en_name) || source.en_name;
-    const card = byName.get(normalizeCardName(lookupName));
-    const previousCard = previousByName.get(normalizeCardName(lookupName));
+    const sourceCard = source.yugipedia_page_id ? cardFromMasterDuelSource(source) : null;
+    const details = byName.get(normalizeCardName(lookupName)) || [];
+    const card = details.find(item => sourceCard && mapFrameType(item.type, item.frameType) === sourceCard.frameType) || details[0];
+    if (card && sourceCard && sourceCard.frameType !== mapFrameType(card.type, card.frameType)) {
+      if (!seenIds.has(sourceCard.id)) {
+        seenIds.add(sourceCard.id);
+        cards.push(sourceCard);
+      }
+      continue;
+    }
+    const previousCards = previousByName.get(normalizeCardName(lookupName)) || [];
+    const previousCard = previousCards.find(item => !sourceCard || item.frameType === sourceCard.frameType) || previousCards[0];
     const previousImage = previousCard && card?.card_images?.find(image => image.id === previousCard.id);
     const id = previousImage ? previousCard.id : card?.id;
     if (!card || seenIds.has(id)) {
+      if (sourceCard) {
+        if (!seenIds.has(sourceCard.id)) {
+          seenIds.add(sourceCard.id);
+          cards.push(sourceCard);
+          continue;
+        }
+      }
       if (!card) unmatched.push(source.en_name);
       continue;
     }

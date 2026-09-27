@@ -8,7 +8,7 @@ const monsters = allCards.filter(card => !['spell', 'trap'].includes(card.frameT
 const revealedEffect = { type: 'direct', stat: 'frameType', value: 'effect', isCorrect: true };
 
 test('Master Duel source contains 5796 effect monsters', () => {
-  assert.ok(monsters.length >= 9059);
+  assert.ok(monsters.length >= 9058);
   const candidates = filterCandidatesByHints(monsters, [revealedEffect]);
   assert.ok(candidates.length >= 5796);
   assert.ok(candidates.every(card => card.frameType === 'effect'));
@@ -18,6 +18,9 @@ test('Master Duel source includes observed live cards and a sane race distributi
   assert.ok(monsters.filter(card => card.race === 'Beast-Warrior').length >= 261);
   assert.ok(monsters.some(card => card.id === 14556954));
   assert.ok(monsters.some(card => card.id === 68059897));
+  assert.equal(monsters.filter(card => card.nameEn === 'Black Luster Soldier').length, 2);
+  assert.deepEqual(new Set(monsters.filter(card => card.nameEn === 'Black Luster Soldier').map(card => card.frameType)), new Set(['normal', 'ritual']));
+  assert.ok(!monsters.some(card => card.nameEn?.startsWith('Power Pro')));
 });
 
 test('revealed compound frames are exact, even with the old partial-input flag', () => {
