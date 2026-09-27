@@ -74,6 +74,7 @@ export function mergeMasterDuelCards(masterDuelRecords, ygoproCards, previous = 
     if (key && !byName.has(key)) byName.set(key, card);
   }
   const previousNames = new Map(previous.map(card => [card.id, card.name]));
+  const previousByName = new Map(previous.map(card => [normalizeCardName(card.nameEn), card]));
   const seenNames = new Set();
   const seenIds = new Set();
   const cards = [];
@@ -83,15 +84,18 @@ export function mergeMasterDuelCards(masterDuelRecords, ygoproCards, previous = 
     seenNames.add(source.en_name);
     const lookupName = MASTER_DUEL_NAME_ALIASES.get(source.en_name) || source.en_name;
     const card = byName.get(normalizeCardName(lookupName));
-    if (!card || seenIds.has(card.id)) {
+    const previousCard = previousByName.get(normalizeCardName(lookupName));
+    const previousImage = previousCard && card?.card_images?.find(image => image.id === previousCard.id);
+    const id = previousImage ? previousCard.id : card?.id;
+    if (!card || seenIds.has(id)) {
       if (!card) unmatched.push(source.en_name);
       continue;
     }
-    seenIds.add(card.id);
-    const image = card.card_images?.[0]?.image_url_cropped;
+    seenIds.add(id);
+    const image = (previousImage || card.card_images?.[0])?.image_url_cropped;
     cards.push({
-      id: card.id,
-      name: source.ko_name || previousNames.get(card.id) || card.name,
+      id,
+      name: source.ko_name || previousNames.get(id) || card.name,
       nameEn: card.name,
       frameType: mapFrameType(card.type, card.frameType),
       attribute: card.attribute ?? null,

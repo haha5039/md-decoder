@@ -29,6 +29,16 @@ test('Master Duel allowlist controls inclusion while YGOPRO supplies card detail
   assert.ok(!cards.some(card => card.id === 3));
 });
 
+test('hybrid merge preserves an existing alternate-art card ID', () => {
+  const detail = { ...api, id: 20, name: 'Card', card_images: [
+    { id: 20, image_url_cropped: 'https://example.com/20.jpg' },
+    { id: 10, image_url_cropped: 'https://example.com/10.jpg' }
+  ] };
+  const [card] = mergeMasterDuelCards([{ en_name: 'Card', ko_name: '카드' }], [detail], [{ ...api, id: 10, nameEn: 'Card', name: '기존 카드' }]);
+  assert.equal(card.id, 10);
+  assert.equal(card.image_url, 'https://example.com/10.jpg');
+});
+
 test('recording free revelations never consumes or refunds paid hints', () => {
   const hints = [{ type: 'guess', batchId: 'g', attemptCost: 1 }, { type: 'direct', batchId: 'g', hintCost: 0 }, { type: 'direct', batchId: 'h', hintCost: 1 }];
   assert.deepEqual(removeInputBatch(hints, 'g'), { hints: [hints[2]], attemptsRefund: 1, hintsRefund: 0 });
