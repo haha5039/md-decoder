@@ -232,31 +232,6 @@ input[type="text"]:focus {
   flex-wrap: wrap;
 }
 
-.matched-value {
-  flex: 0 0 100%;
-  display: grid;
-  grid-template-columns: minmax(130px, 1fr) minmax(0, 1.4fr);
-  align-items: center;
-  gap: 0.5rem;
-  margin-top: 0.55rem;
-  padding-top: 0.55rem;
-  border-top: 1px dashed var(--panel-border);
-}
-
-.matched-value label {
-  margin: 0;
-  font-size: 0.75rem;
-  color: var(--accent-gold);
-}
-
-.matched-value select,
-.matched-value input {
-  min-width: 0;
-  width: 100%;
-  padding: 0.4rem 0.5rem;
-  font-size: 0.8rem;
-}
-
 .toggle-group {
   display: flex;
   gap: 0.5rem;

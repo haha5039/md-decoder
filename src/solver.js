@@ -14,17 +14,12 @@ const matchMask = (guess, target) =>
   ((guess.card.def === target.card.def) ? 32 : 0);
 
 export function createSolver(cards) {
-  const frameValues = [...new Set(cards.map(card => card.frameType))];
-  const levelValues = [...new Set(cards.map(getTargetRulesLevel))];
   const records = cards.map(card => ({
     card, key: signature(card), frameMask: mask(card),
     levelMask: getValidLevels(card).reduce((bits, level) => bits | (1 << level), 0),
-    frameCode: frameValues.indexOf(card.frameType) + 1,
-    levelCode: levelValues.indexOf(getTargetRulesLevel(card)) + 1
+    rulesLevel: getTargetRulesLevel(card)
   }));
-  const frameStride = 64;
-  const levelStride = frameStride * (frameValues.length + 1);
-  const bucketCapacity = levelStride * (levelValues.length + 1);
+  const bucketCapacity = 64;
 
   return function solve({ candidateIds, guessedIds = [], revealedStats = [] }) {
     const started = performance.now();
@@ -58,6 +53,7 @@ export function createSolver(cards) {
       const guess = group[0];
       const branches = twoTurnExact ? new Map() : null;
       let winning = 0;
+      let eliminated = 0;
       let winBits = 0n;
       touched.length = 0;
       for (let j = 0; j < targets.length; j++) {
@@ -68,16 +64,21 @@ export function createSolver(cards) {
           if (twoTurnExact) winBits |= targetBits[j];
           continue;
         }
-        // Matching frame/level properties reveal the target's exact value.
-        const key = profile + ((profile & 1) ? target.frameCode * frameStride : 0)
-          + ((profile & 2) ? target.levelCode * levelStride : 0);
+        const survivesAutomaticValues = (!(profile & 1) || target.card.frameType === guess.card.frameType)
+          && (!(profile & 2) || target.rulesLevel === guess.rulesLevel);
+        if (!survivesAutomaticValues) {
+          eliminated += target.weight;
+          continue;
+        }
+        const key = profile;
         if (counts[key] === 0) touched.push(key);
         counts[key] += target.weight;
         if (twoTurnExact) branches.set(key, (branches.get(key) || 0n) | targetBits[j]);
       }
       let entropy = winning ? -(winning / total) * Math.log2(winning / total) : 0;
-      let squares = 0;
-      let minimax = 0;
+      if (eliminated) entropy -= (eliminated / total) * Math.log2(eliminated / total);
+      let squares = eliminated * total;
+      let minimax = eliminated ? total : 0;
       for (const key of touched) {
         const count = counts[key];
         const probability = count / total;
@@ -86,8 +87,9 @@ export function createSolver(cards) {
         minimax = Math.max(minimax, count);
         counts[key] = 0;
       }
-      scores.push({ group, entropy, expectedRemaining: squares / total, minimax,
-        oneShotProb: winning / total, twoShotProb: null, winning,
+      const eliminationProb = eliminated / total;
+      scores.push({ group, entropy, adjustedEntropy: entropy - eliminationProb * 2, expectedRemaining: squares / total, minimax,
+        oneShotProb: winning / total, twoShotProb: null, eliminationProb, winning,
         branches: twoTurnExact ? [...branches.values()] : null });
       if (winBits) winMasks.add(winBits);
     }
@@ -151,8 +153,8 @@ export function sortScores(list, criteria) {
     else if (criteria === 'twoShot') difference = (b.twoShotProb ?? -1) - (a.twoShotProb ?? -1);
     else if (criteria === 'expected') difference = a.expectedRemaining - b.expectedRemaining;
     else if (criteria === 'minimax') difference = a.minimax - b.minimax;
-    else difference = b.entropy - a.entropy;
-    return difference || b.oneShotProb - a.oneShotProb || a.expectedRemaining - b.expectedRemaining || b.entropy - a.entropy || a.card.id - b.card.id;
+    else difference = (b.adjustedEntropy ?? b.entropy) - (a.adjustedEntropy ?? a.entropy);
+    return difference || (a.eliminationProb ?? 0) - (b.eliminationProb ?? 0) || b.oneShotProb - a.oneShotProb || a.expectedRemaining - b.expectedRemaining || b.entropy - a.entropy || a.card.id - b.card.id;
   });
 }
 

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizeCards, validateCards } from '../src/data.js';
-import { budget, createBatchId, nextChallenge, parseStatInput, removeInputBatch, restoreSession, saveSession, hasSolvedGuess } from '../src/session.js';
+import { applyAutomaticMatches, budget, createBatchId, nextChallenge, parseStatInput, removeInputBatch, restoreSession, saveSession, hasSolvedGuess } from '../src/session.js';
 import { escapeHTML } from '../src/utils.js';
 
 const api = { id: 1, name: 'Card', type: 'Effect Monster', frameType: 'effect', attribute: 'DARK', level: 0, race: 'Dragon', atk: -1, def: 0 };
@@ -75,4 +75,15 @@ test('session restore removes unsafe inferred values from older versions', () =>
 test('next challenge preserves resources and decreases remaining problems', () => {
   assert.deepEqual(nextChallenge({ attempts: 7, remainingHints: 2, problems: 3 }), { hints: [], attempts: 7, remainingHints: 2, problems: 2 });
   assert.equal(nextChallenge({ attempts: 0, remainingHints: 0, problems: 1 }).problems, 1);
+});
+
+test('matching frame and level are applied automatically', () => {
+  const card = { ...api, id: 7, frameType: 'effect', level: 2 };
+  const batch = [
+    { type: 'guess', stat: 'frameType', value: 'effect', isCorrect: true, cardId: 7, batchId: 'g' },
+    { type: 'guess', stat: 'level', value: [2], isCorrect: true, cardId: 7, batchId: 'g' }
+  ];
+  const completed = applyAutomaticMatches(batch, [card]);
+  assert.ok(completed.some(hint => hint.supplemental && hint.stat === 'frameType' && hint.value === 'effect'));
+  assert.ok(completed.some(hint => hint.supplemental && hint.stat === 'level' && hint.value === 2));
 });

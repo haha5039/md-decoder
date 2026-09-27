@@ -195,7 +195,7 @@
             <h3 style="font-size: 0.95rem; margin-bottom: 0.5rem; border-bottom: 1px solid var(--panel-border); padding-bottom: 0.4rem; color: var(--text-main); display: flex; align-items: center; gap: 0.3rem;">
               <span>🧪</span> <span>2. 인게임 도전 결과 (오답 소거)</span>
             </h3>
-            <p class="hint-desc" style="margin-bottom: 0.75rem;">카드와 6개 O/X를 기록하세요. 프레임·레벨의 실제 공개값이 여러 가지일 때만 추가 선택란이 나타납니다.</p>
+            <p class="hint-desc" style="margin-bottom: 0.75rem;">카드를 선택하고 인게임에 표시된 6개 항목의 O/X만 기록하세요.</p>
             <div class="search-container">
               <input type="text" id="cardSearch" placeholder="카드 이름 검색 (한글/영어 가능)..." autocomplete="off" style="padding: 0.65rem 1rem; font-size: 0.95rem; border-radius: 8px;">
               <div id="searchDropdown" class="dropdown hidden"></div>
@@ -223,25 +223,6 @@
                     <button class="btn-toggle btn-correct" data-val="correct" style="padding: 0.45rem 0.75rem; font-size: 0.85rem; border-radius: 8px; font-weight: bold; min-width: 72px;">O (맞음)</button>
                     <button class="btn-toggle btn-wrong" data-val="wrong" style="padding: 0.45rem 0.75rem; font-size: 0.85rem; border-radius: 8px; font-weight: bold; min-width: 72px;">X (틀림)</button>
                   </div>
-                  <div class="matched-value hidden" data-reveal="frameType">
-                    <label for="matchedFrame">인게임에 공개된 프레임</label>
-                    <select id="matchedFrame">
-                      <option value="">선택하세요</option>
-                      <option value="normal">일반 몬스터</option>
-                      <option value="effect">효과 몬스터</option>
-                      <option value="fusion">융합 몬스터</option>
-                      <option value="synchro">싱크로 몬스터</option>
-                      <option value="xyz">엑시즈 몬스터</option>
-                      <option value="link">링크 몬스터</option>
-                      <option value="ritual">의식 몬스터</option>
-                      <option value="normal_pendulum">일반 / 펜듈럼</option>
-                      <option value="effect_pendulum">효과 / 펜듈럼</option>
-                      <option value="fusion_pendulum">융합 / 펜듈럼</option>
-                      <option value="synchro_pendulum">싱크로 / 펜듈럼</option>
-                      <option value="xyz_pendulum">엑시즈 / 펜듈럼</option>
-                      <option value="ritual_pendulum">의식 / 펜듈럼</option>
-                    </select>
-                  </div>
                 </div>
                 <!-- attribute -->
                 <div class="status-row" data-stat="attribute" style="padding: 0.5rem 0.75rem;">
@@ -257,10 +238,6 @@
                   <div class="toggle-group">
                     <button class="btn-toggle btn-correct" data-val="correct" style="padding: 0.45rem 0.75rem; font-size: 0.85rem; border-radius: 8px; font-weight: bold; min-width: 72px;">O (맞음)</button>
                     <button class="btn-toggle btn-wrong" data-val="wrong" style="padding: 0.45rem 0.75rem; font-size: 0.85rem; border-radius: 8px; font-weight: bold; min-width: 72px;">X (틀림)</button>
-                  </div>
-                  <div class="matched-value hidden" data-reveal="level">
-                    <label for="matchedLevel">인게임에 공개된 수치</label>
-                    <input id="matchedLevel" type="number" min="0" max="13" step="1" placeholder="예: 12">
                   </div>
                 </div>
                 <!-- race -->

@@ -1,4 +1,4 @@
-import { STAT_KEYS } from './utils.js';
+import { STAT_KEYS, getTargetRulesLevel } from './utils.js';
 const SESSION_KEY = 'md-decoder-session-v1';
 let batchSequence = 0;
 
@@ -66,4 +66,29 @@ export function hasSolvedGuess(hints) {
 
 export function nextChallenge(state) {
   return { hints: [], attempts: budget(state.attempts), remainingHints: budget(state.remainingHints), problems: Math.max(1, budget(state.problems, 1) - 1) };
+}
+
+export function applyAutomaticMatches(hints, cards) {
+  const cardById = new Map(cards.map(card => [card.id, card]));
+  const result = [...hints];
+  const batches = new Map();
+  for (const hint of hints) {
+    if (hint.type !== 'guess') continue;
+    if (!batches.has(hint.batchId)) batches.set(hint.batchId, []);
+    batches.get(hint.batchId).push(hint);
+  }
+  for (const [batchId, batchHints] of batches) {
+    const card = cardById.get(batchHints[0]?.cardId);
+    if (!card) continue;
+    for (const stat of ['frameType', 'level']) {
+      if (!batchHints.some(hint => hint.stat === stat && hint.isCorrect)) continue;
+      if (hints.some(hint => hint.type === 'direct' && hint.batchId === batchId && hint.stat === stat)) continue;
+      result.push({
+        type: 'direct', stat,
+        value: stat === 'level' ? getTargetRulesLevel(card) : card.frameType,
+        isCorrect: true, isExact: true, supplemental: true, automatic: true, batchId
+      });
+    }
+  }
+  return result;
 }

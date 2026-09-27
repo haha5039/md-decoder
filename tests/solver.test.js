@@ -9,21 +9,25 @@ const close = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-1
 
 // Deliberately simple reference model, independent of bit packing and profile compression.
 function reference(guess, targets, guesses) {
-  const buckets = new Map(); let wins = 0;
+  const buckets = new Map(); let wins = 0; let eliminated = 0;
   for (const target of targets) {
     const result = getGuessFeedback(guess, target);
     if (result.won) { wins++; continue; }
-    const key = JSON.stringify(result);
+    const survives = (!result.matches.frameType || target.frameType === guess.frameType)
+      && (!result.matches.level || getTargetRulesLevel(target) === getTargetRulesLevel(guess));
+    if (!survives) { eliminated++; continue; }
+    const key = JSON.stringify(result.matches);
     if (!buckets.has(key)) buckets.set(key, []);
     buckets.get(key).push(target);
   }
   const counts = [...buckets.values()].map(bucket => bucket.length);
   let two = wins;
   for (const bucket of buckets.values()) two += Math.max(0, ...guesses.map(next => bucket.filter(target => getGuessFeedback(next, target).won).length));
-  const outcomes = [...counts, wins].filter(Boolean);
+  const outcomes = [...counts, wins, eliminated].filter(Boolean);
   return { entropy: -outcomes.reduce((sum, n) => sum + n / targets.length * Math.log2(n / targets.length), 0),
-    expectedRemaining: counts.reduce((sum, n) => sum + n * n, 0) / targets.length,
-    minimax: Math.max(0, ...counts), oneShotProb: wins / targets.length, twoShotProb: two / targets.length };
+    expectedRemaining: (counts.reduce((sum, n) => sum + n * n, 0) + eliminated * targets.length) / targets.length,
+    minimax: eliminated ? targets.length : Math.max(0, ...counts), oneShotProb: wins / targets.length,
+    twoShotProb: two / targets.length, eliminationProb: eliminated / targets.length };
 }
 
 test('two distinct targets: 50% now, 100% within two submissions', () => {
@@ -32,11 +36,11 @@ test('two distinct targets: 50% now, 100% within two submissions', () => {
   for (const score of result.snipes) { close(score.oneShotProb, 0.5); close(score.twoShotProb, 1); }
 });
 
-test('revealed frame values split otherwise identical O/X outcomes', () => {
+test('identical O/X outcomes stay in one result branch', () => {
   const cards = [card(1, { frameType: 'fusion', atk: 0 }), card(2, { frameType: 'fusion' }), card(3, { frameType: 'fusion_pendulum' })];
   const result = createSolver(cards)({ candidateIds: [2, 3] });
   const score = result.scouts.find(score => score.card.id === 1);
-  close(score.entropy, 1); close(score.expectedRemaining, 1); close(score.twoShotProb, 1);
+  close(score.entropy, 1); close(score.expectedRemaining, 1.5); close(score.twoShotProb, 0.5); close(score.eliminationProb, 0.5);
 });
 
 test('optimized metrics equal exhaustive reference including duplicates and Pendulum overlaps', () => {

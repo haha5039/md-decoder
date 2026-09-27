@@ -4,7 +4,7 @@ import { getValidLevels, renderCardStatsHTML, translateAttribute, translateFrame
 
 import { allocateAttempts, sortScores, distinctScores, TWO_TURN_LIMIT, chooseCriteria } from './solver.js';
 import { normalizeCards, fetchCardData } from './data.js';
-import { budget, createBatchId, nextChallenge, parseStatInput, removeInputBatch, saveSession, restoreSession, hasSolvedGuess } from './session.js';
+import { applyAutomaticMatches, budget, createBatchId, nextChallenge, parseStatInput, removeInputBatch, saveSession, restoreSession, hasSolvedGuess } from './session.js';
 
 import { getCachedCards, saveCachedCards, clearCachedCards } from './db.js'
 
@@ -40,8 +40,6 @@ const infoDetails = document.getElementById('infoDetails');
 const statusToggles = document.querySelectorAll('.status-toggles .btn-toggle');
 const applyGuessBtn = document.getElementById('applyGuessBtn');
 const judgmentProgress = document.getElementById('judgmentProgress');
-const matchedFrame = document.getElementById('matchedFrame');
-const matchedLevel = document.getElementById('matchedLevel');
 
 const candidatesCount = document.getElementById('candidatesCount');
 const visibleCandidatesCount = document.getElementById('visibleCandidatesCount');
@@ -124,7 +122,7 @@ async function initGameData() {
   let restoreMessage = '';
   try { saved = restoreSession(localStorage, allCards); } catch { /* Storage can be disabled by the browser. */ }
   if (saved) {
-    hints = saved.hints;
+    hints = applyAutomaticMatches(saved.hints, allCards);
     totalAttemptsLeft.value = saved.attempts;
     hintsLeft.value = saved.remainingHints;
     problemsLeft.value = saved.problems;
@@ -270,7 +268,7 @@ function renderHints() {
     } else {
       const resClass = hint.isCorrect ? 'res-correct' : 'res-wrong';
       const resText = hint.isCorrect ? 'O' : 'X';
-      const revealed = hints.find(item => item.supplemental && item.batchId === hint.batchId && item.stat === hint.stat);
+      const revealed = hints.find(item => item.supplemental && !item.automatic && item.batchId === hint.batchId && item.stat === hint.stat);
       const revealedText = revealed ? ` → 공개: <span class="stat-val">${escapeHTML(getTranslatedValue(revealed.stat, revealed.value))}</span>` : '';
       hintContent = `
         <span>
@@ -398,9 +396,6 @@ function selectCard(card) {
   showInputMessage('');
 
   selectedCard = card;
-  matchedFrame.value = '';
-  matchedLevel.value = '';
-  document.querySelectorAll('.matched-value').forEach(element => element.classList.add('hidden'));
   selectedCardContainer.classList.remove('hidden');
   selectedCardImg.src = card.image_url || '';
   infoName.textContent = card.name;
@@ -464,29 +459,8 @@ function refreshMatchedInputs() {
     const stat = row.dataset.stat;
     return [{ type: 'guess', stat, isCorrect: active.dataset.val === 'correct', value: stat === 'level' ? getValidLevels(selectedCard) : selectedCard[stat] }];
   });
-  const provisional = selected.length === 6 ? filterCandidatesByHints(candidates, selected) : null;
-  const winning = selected.length === 6 && selected.every(hint => hint.isCorrect);
   judgmentProgress.textContent = `${selected.length} / 6`;
   applyGuessBtn.disabled = selected.length !== 6;
-  for (const [stat, input] of [['frameType', matchedFrame], ['level', matchedLevel]]) {
-    const reveal = document.querySelector(`[data-reveal="${stat}"]`);
-    const matched = selected.some(hint => hint.stat === stat && hint.isCorrect);
-    if (!matched || winning) {
-      reveal.classList.add('hidden');
-      input.value = '';
-      continue;
-    }
-    if (provisional?.length) {
-      const values = [...new Set(provisional.map(card => stat === 'level' ? getTargetRulesLevel(card) : card.frameType))];
-      if (values.length === 1) {
-        input.value = values[0];
-        reveal.classList.add('hidden');
-        continue;
-      }
-      if (!values.includes(stat === 'level' && input.value !== '' ? Number(input.value) : input.value)) input.value = '';
-    }
-    reveal.classList.remove('hidden');
-  }
 }
 
 applyGuessBtn.addEventListener('click', () => {
@@ -523,36 +497,16 @@ applyGuessBtn.addEventListener('click', () => {
     showInputMessage('6개 항목의 O/X를 모두 선택해주세요. 아직 도전 횟수는 차감하지 않았습니다.');
     return;
   }
-  const provisionalCandidates = filterCandidatesByHints(candidates, newHints);
+  const completedHints = applyAutomaticMatches(newHints, [selectedCard]);
+  const provisionalCandidates = filterCandidatesByHints(candidates, completedHints);
   if (!provisionalCandidates.length) {
     showInputMessage('이 O/X 조합을 만족하는 카드가 없습니다. 입력을 다시 확인해주세요. 아직 도전 횟수는 차감하지 않았습니다.');
     return;
   }
-  const isWinningGuess = newHints.every(hint => hint.isCorrect);
-  for (const [stat, input] of isWinningGuess ? [] : [['frameType', matchedFrame], ['level', matchedLevel]]) {
-    if (!newHints.some(hint => hint.stat === stat && hint.isCorrect)) continue;
-    const possibleValues = [...new Set(provisionalCandidates.map(card => stat === 'level' ? getTargetRulesLevel(card) : card.frameType))];
-    let revealedValue;
-    try {
-      revealedValue = input.value === '' && possibleValues.length === 1 ? possibleValues[0] : parseStatInput(input.value, stat);
-    } catch (error) {
-      showInputMessage(error.message);
-      return;
-    }
-    if (revealedValue === undefined) {
-      showInputMessage(`${getStatNameKR(stat)}이 O이므로 인게임에 공개된 실제 값을 선택해주세요. 아직 도전 횟수는 차감하지 않았습니다.`);
-      return;
-    }
-    if (!possibleValues.includes(revealedValue)) {
-      showInputMessage(`선택한 ${getStatNameKR(stat)} 값이 O/X 결과와 함께 성립하지 않습니다. 인게임 표시를 다시 확인해주세요.`);
-      return;
-    }
-    newHints.push({ type: 'direct', stat, value: revealedValue, isCorrect: true, isExact: true, supplemental: true, batchId });
-  }
   newHints[0].attemptCost = 1;
   totalAttemptsLeft.value = budget(totalAttemptsLeft.value) - 1;
   
-  hints = [...hints, ...newHints];
+  hints = [...hints, ...completedHints];
   applyFilters();
   
   selectedCardContainer.classList.add('hidden');
@@ -621,9 +575,6 @@ function resetChallenge(preserveResources = false) {
   });
   judgmentProgress.textContent = '0 / 6';
   applyGuessBtn.disabled = true;
-  matchedFrame.value = '';
-  matchedLevel.value = '';
-  document.querySelectorAll('.matched-value').forEach(element => element.classList.add('hidden'));
   
   // Reset numeric settings (0. 남은 횟수 설정)
   hintsLeft.value = resources.remainingHints;
@@ -647,7 +598,7 @@ if (undoHintBtn) {
 // CRITERIA SELECTION LOGIC
 // ------------------------------------------------------------------
 const criteriaDescriptions = {
-  entropy: '<strong>기대 정보량:</strong> O/X와 일치 시 공개되는 실제 값을 포함한 결과의 정보량을 최대화합니다. 최단 해결 횟수를 보장하지는 않습니다.',
+  entropy: '<strong>기대 정보량:</strong> 6개 O/X 결과에 따른 정보량을 최대화합니다. 최단 해결 횟수를 보장하지는 않습니다.',
   minimax: '<strong>최악 잔여 최소:</strong> 실패했을 때 남을 수 있는 가장 큰 후보군을 줄입니다. 정답이면 잔여 수는 0입니다.',
   oneShot: '<strong>즉시 정답 확률:</strong> 이번 제출로 6개 항목이 모두 일치할 확률입니다. 후보 1장만 남기고 틀린 경우는 성공에 포함하지 않습니다.',
   twoShot: '<strong>2회 내 성공 확률:</strong> 첫 판정 후 최선의 다음 카드를 제출할 때의 성공 확률입니다. 서로 구분되는 후보 유형이 60개 이하이면 카드 수가 많아도 전수 계산합니다. 추가 힌트는 사용하지 않는 조건입니다.',
@@ -719,6 +670,7 @@ function renderRecommendationList(list, container) {
     const expectedText = `평균: ${item.expectedRemaining.toFixed(1)}장`;
     const minimaxText = `최악: ${item.minimax}장`;
     const oneShotText = `즉시 정답: ${(item.oneShotProb * 100).toFixed(2)}%`;
+    const riskText = item.eliminationProb > 0 ? `예외 오차 위험: ${(item.eliminationProb * 100).toFixed(2)}%` : '';
     
     let detailHtml = '';
     if (activeCriteria === 'entropy') {
@@ -763,6 +715,7 @@ function renderRecommendationList(list, container) {
       <div class="card-item-title" title="${escapeHTML(card.name)}">${escapeHTML(card.name)}</div>
       ${item.equivalentChoices > 1 ? `<div class="card-item-stats">동일 판정 ${item.equivalentChoices}장 중 대표</div>` : ''}
       ${detailHtml}
+      ${riskText ? `<div class="card-item-info" style="color:#fbbf24;">${riskText}</div>` : ''}
       ${['oneShot', 'twoShot'].includes(activeCriteria) ? '' : `<div class="card-item-info">${oneShotText}${item.twoShotProb === null ? '' : ` · 2회 내 ${(item.twoShotProb * 100).toFixed(2)}%`}</div>`}
       <div class="candidate-stats" style="border-top: 1px dashed rgba(255,255,255,0.08); padding-top: 0.25rem; margin-top: 0.25rem;">
         <div class="candidate-stats-row">
