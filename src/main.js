@@ -1,9 +1,9 @@
 import './style.css'
-import { allCards as rawCards } from './cards_data.js'
+import { allCards as rawCards, dataGeneratedAt } from './cards_data.js'
 import { getValidLevels, renderCardStatsHTML, translateAttribute, translateFrame, translateRace, getTargetRulesLevel, filterCandidatesByHints, escapeHTML, formatStat } from './utils.js'
 
 import { allocateAttempts, sortScores, distinctScores, TWO_TURN_LIMIT, chooseCriteria } from './solver.js';
-import { normalizeCards, fetchCardData } from './data.js';
+import { fetchCardManifest } from './data.js';
 import { applyAutomaticMatches, budget, createBatchId, nextChallenge, parseStatInput, removeInputBatch, saveSession, restoreSession, hasSolvedGuess } from './session.js';
 
 import { getCachedCards, saveCachedCards, clearCachedCards } from './db.js'
@@ -29,6 +29,7 @@ let activeCriteria = 'entropy';
 let solverWorker = null;
 let calculationId = 0;
 let candidateLimit = 48;
+const CURRENT_EVENT_CARD_TOTAL = 9058;
 
 // DOM Elements
 const searchInput = document.getElementById('cardSearch');
@@ -85,7 +86,8 @@ async function initGameData() {
     const cached = await getCachedCards();
     if (cached && cached.length > 0) {
       allCards = cached.filter(c => c.frameType !== 'spell' && c.frameType !== 'trap');
-      if (dbStatusText) dbStatusText.textContent = '현재: 사용자 업데이트 데이터 사용 중';
+      const cachedAt = (() => { try { return localStorage.getItem('md-decoder-db-updated-at'); } catch { return null; } })();
+      if (dbStatusText) dbStatusText.textContent = `현재: 사용자 업데이트 데이터${cachedAt ? ` (${new Date(cachedAt).toLocaleDateString()})` : ''}`;
       if (dbStatusBadge) {
         dbStatusBadge.textContent = '최신 DB';
         dbStatusBadge.style.background = 'rgba(34, 197, 94, 0.15)';
@@ -94,7 +96,7 @@ async function initGameData() {
       console.log(`Loaded ${allCards.length} cards from IndexedDB.`);
     } else {
       allCards = rawCards.filter(c => c.frameType !== 'spell' && c.frameType !== 'trap');
-      if (dbStatusText) dbStatusText.textContent = '현재: 내장 데이터 사용 중';
+      if (dbStatusText) dbStatusText.textContent = `현재: 검증된 내장 데이터 (${new Date(dataGeneratedAt).toLocaleDateString()})`;
       if (dbStatusBadge) {
         dbStatusBadge.textContent = '내장 DB';
         dbStatusBadge.style.background = 'rgba(59, 130, 246, 0.15)';
@@ -105,7 +107,7 @@ async function initGameData() {
   } catch (err) {
     console.error("Failed to load IndexedDB cache, fallback to static:", err);
     allCards = rawCards.filter(c => c.frameType !== 'spell' && c.frameType !== 'trap');
-    if (dbStatusText) dbStatusText.textContent = '현재: 내장 데이터 사용 중 (오류)';
+    if (dbStatusText) dbStatusText.textContent = `현재: 검증된 내장 데이터 (${new Date(dataGeneratedAt).toLocaleDateString()}, 캐시 오류)`;
     if (dbStatusBadge) {
       dbStatusBadge.textContent = '내장 DB (오류)';
       dbStatusBadge.style.background = 'rgba(239, 68, 68, 0.15)';
@@ -135,6 +137,9 @@ async function initGameData() {
 
 function updateUI() {
   candidatesCount.textContent = `${candidates.length}장 / ${allCards.length}장`;
+  document.getElementById('databaseScopeText').textContent = allCards.length === CURRENT_EVENT_CARD_TOTAL
+    ? `검증 DB ${allCards.length}장 · 현재 이벤트와 일치`
+    : `검증 DB ${allCards.length}장 · 현재 이벤트 ${CURRENT_EVENT_CARD_TOTAL}장 (차이 ${Math.abs(allCards.length - CURRENT_EVENT_CARD_TOTAL)}장 미확인)`;
   renderCandidatePage();
   
   if (hints.length > 0) {
@@ -883,17 +888,16 @@ if (updateDbBtn) {
     };
     
     try {
-      setProgress(10, '카드 데이터 요청 중...');
-      const [english, korean] = await Promise.allSettled([
-        fetchCardData('https://db.ygoprodeck.com/api/v7/cardinfo.php?format=Master%20Duel'),
-        fetchCardData('https://db.ygoprodeck.com/api/v7/cardinfo.php?format=Master%20Duel&language=ko')
-      ]);
-      if (english.status !== 'fulfilled') throw english.reason;
-      setProgress(70, '데이터 검증 중...');
-      const finalCards = normalizeCards(english.value, korean.status === 'fulfilled' ? korean.value : [], [...new Map([...rawCards, ...allCards].map(card => [card.id, card])).values()]);
+      setProgress(20, '검증된 Master Duel 데이터 요청 중...');
+      const manifestUrl = new URL(`${import.meta.env.BASE_URL}master_duel_manifest.json`, window.location.origin);
+      manifestUrl.searchParams.set('v', Date.now());
+      const manifest = await fetchCardManifest(manifestUrl.href);
+      const finalCards = manifest.cards;
+      setProgress(70, `${manifest.counts?.monsters ?? finalCards.length}장 데이터 검증 완료`);
       persistSession();
       setProgress(90, 'IndexedDB 캐시에 저장 중...');
       await saveCachedCards(finalCards);
+      try { localStorage.setItem('md-decoder-db-updated-at', manifest.generatedAt || new Date().toISOString()); } catch { /* Optional metadata. */ }
       
       setProgress(100, '완료! 페이지를 새로고침합니다.');
       setTimeout(() => {

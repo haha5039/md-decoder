@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeCards, validateCards } from '../src/data.js';
+import { mergeMasterDuelCards, normalizeCards, validateCards } from '../src/data.js';
 import { applyAutomaticMatches, budget, createBatchId, nextChallenge, parseStatInput, removeInputBatch, restoreSession, saveSession, hasSolvedGuess } from '../src/session.js';
 import { escapeHTML } from '../src/utils.js';
 
@@ -18,6 +18,15 @@ test('bad responses cannot replace the database; alternate artwork is deduplicat
   assert.throws(() => normalizeCards([{ ...api, level: 99 }]));
   assert.equal(normalizeCards([api, { ...api, id: 2 }, { ...api, id: 3, name: 'Token', type: 'Token' }]).length, 1);
   assert.throws(() => normalizeCards([api], [], Array.from({ length: 5 }, (_, i) => ({ id: i, name: 'Old' }))));
+});
+
+test('Master Duel allowlist controls inclusion while YGOPRO supplies card details', () => {
+  const details = [api, { ...api, id: 2, name: 'VIP Whale' }, { ...api, id: 3, name: 'Shiba-Warrior Taro' }];
+  const masterDuel = [{ en_name: 'Card', ko_name: '카드' }, { en_name: 'VIP Whale', ko_name: 'VIP 웨일' }];
+  const cards = mergeMasterDuelCards(masterDuel, details);
+  assert.deepEqual(cards.map(card => card.id), [1, 2]);
+  assert.equal(cards[0].name, '카드');
+  assert.ok(!cards.some(card => card.id === 3));
 });
 
 test('recording free revelations never consumes or refunds paid hints', () => {

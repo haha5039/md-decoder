@@ -11,6 +11,8 @@ node_modules
 dist
 dist-ssr
 *.local
+public/master_duel_manifest.json.tmp
+src/cards_data.js.tmp
 
 # Editor directories and files
 .vscode/*

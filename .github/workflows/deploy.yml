@@ -4,6 +4,8 @@ on:
   push:
     branches: ["main", "master"]
   workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * *"
 
 # Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
 permissions:
@@ -34,6 +36,8 @@ jobs:
           cache: 'npm'
       - name: Install dependencies
         run: npm ci
+      - name: Update Master Duel card data
+        run: npm run data:update
       - name: Test
         run: npm test
       - name: Build
