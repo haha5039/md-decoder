@@ -29,6 +29,70 @@ test('Master Duel allowlist controls inclusion while YGOPRO supplies card detail
   assert.ok(!cards.some(card => card.id === 3));
 });
 
+test('Master Duel values override conflicting generic API stats', () => {
+  const details = [{
+    ...api,
+    id: 72246674,
+    name: 'Gladiator Beast Dareios',
+    type: 'Link Monster',
+    frameType: 'link',
+    attribute: 'DARK',
+    level: 2,
+    race: 'Beast-Warrior',
+    atk: 1700,
+    def: null,
+    card_images: [{ id: 72246674, image_url_cropped: 'https://example.com/dareios.jpg' }]
+  }];
+  const source = [{
+    title: 'Gladiator Beast Dareios (Master Duel)',
+    en_name: 'Gladiator Beast Dareios',
+    ko_name: '검투수 다레이오스',
+    types: 'Beast-Warrior  / Link / Effect',
+    attribute: 'EARTH',
+    link_arrows: 'Bottom-Center, Bottom-Right',
+    atk: '1700',
+    yugipedia_page_id: 1248708
+  }];
+
+  const [card] = mergeMasterDuelCards(source, details);
+  assert.deepEqual({
+    id: card.id,
+    frameType: card.frameType,
+    attribute: card.attribute,
+    level: card.level,
+    race: card.race,
+    atk: card.atk,
+    def: card.def
+  }, {
+    id: 72246674,
+    frameType: 'link',
+    attribute: 'EARTH',
+    level: 2,
+    race: 'Beast-Warrior',
+    atk: 1700,
+    def: null
+  });
+});
+
+test('Master Duel ranks are retained as the event level value', () => {
+  const detail = { ...api, id: 65301952, name: 'Alchemic Magician', type: 'XYZ Monster', frameType: 'xyz', level: 4 };
+  const source = [{
+    title: 'Alchemic Magician (Master Duel)',
+    en_name: 'Alchemic Magician',
+    ko_name: '알케믹 매지션',
+    types: 'Spellcaster / Xyz / Effect',
+    attribute: 'DARK',
+    rank: '4',
+    atk: '1500',
+    def: '1500',
+    yugipedia_page_id: 110744
+  }];
+
+  const [card] = mergeMasterDuelCards(source, [detail]);
+  assert.equal(card.frameType, 'xyz');
+  assert.equal(card.level, 4);
+});
+
 test('hybrid merge preserves an existing alternate-art card ID', () => {
   const detail = { ...api, id: 20, name: 'Card', card_images: [
     { id: 20, image_url_cropped: 'https://example.com/20.jpg' },

@@ -8,14 +8,16 @@ const monsters = allCards.filter(card => !['spell', 'trap'].includes(card.frameT
 const revealedEffect = { type: 'direct', stat: 'frameType', value: 'effect', isCorrect: true };
 
 test('Master Duel source contains 5796 effect monsters', () => {
-  assert.ok(monsters.length >= 9058);
+  assert.equal(monsters.length, 9058);
   const candidates = filterCandidatesByHints(monsters, [revealedEffect]);
-  assert.ok(candidates.length >= 5796);
+  assert.equal(candidates.length, 5796);
   assert.ok(candidates.every(card => card.frameType === 'effect'));
 });
 
 test('Master Duel source includes observed live cards and a sane race distribution', () => {
-  assert.ok(monsters.filter(card => card.race === 'Beast-Warrior').length >= 261);
+  assert.equal(monsters.filter(card => card.race === 'Beast-Warrior').length, 261);
+  assert.equal(monsters.filter(card => card.attribute === 'EARTH').length, 2047);
+  assert.equal(monsters.find(card => card.nameEn === 'Gladiator Beast Dareios')?.attribute, 'EARTH');
   assert.ok(monsters.some(card => card.id === 14556954));
   assert.ok(monsters.some(card => card.id === 68059897));
   assert.equal(monsters.filter(card => card.nameEn === 'Black Luster Soldier').length, 2);

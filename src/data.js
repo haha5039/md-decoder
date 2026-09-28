@@ -96,7 +96,7 @@ function cardFromMasterDuelSource(source) {
       image_url: MASTER_DUEL_IMAGE_OVERRIDES.get(source.main) || null
     };
   }
-  const parts = String(source.types || '').split(' / ').filter(Boolean);
+  const parts = String(source.types || '').split('/').map(part => part.trim()).filter(Boolean);
   const race = parts[0] || null;
   const tags = new Set(parts.slice(1).map(part => part.toLowerCase()));
   const isPendulum = tags.has('pendulum');
@@ -113,14 +113,17 @@ function cardFromMasterDuelSource(source) {
         : frameType.startsWith('fusion') ? 'Fusion Monster'
           : frameType.startsWith('ritual') ? 'Ritual Monster'
             : frameType.startsWith('normal') ? 'Normal Monster' : 'Effect Monster';
-  const linkValue = source.link_arrows ? String(source.link_arrows).split(',').length : null;
+  const linkValue = source.link_arrows
+    ? String(source.link_arrows).split(',').map(arrow => arrow.trim()).filter(Boolean).length
+    : null;
+  const printedLevel = source.level ?? source.rank;
   return {
     id: 1_500_000_000 + Number(source.yugipedia_page_id),
     name: source.ko_name || source.en_name,
     nameEn: source.en_name,
     frameType,
     attribute: source.attribute || null,
-    level: sourceNumber(source.level, linkValue),
+    level: sourceNumber(printedLevel, linkValue),
     race,
     type: typeName,
     atk: sourceNumber(source.atk),
@@ -183,17 +186,23 @@ export function mergeMasterDuelCards(masterDuelRecords, ygoproCards, previous = 
     }
     seenIds.add(id);
     const image = (previousImage || card.card_images?.[0])?.image_url_cropped;
-    cards.push({
-      id,
-      name: source.ko_name || previousNames.get(id) || card.name,
-      nameEn: card.name,
+    // The Card Decoder runs on Master Duel's card values. YGOPRODeck is used
+    // only for stable passcodes and images because its generic card details can
+    // temporarily disagree with the version available in Master Duel.
+    const eventCard = sourceCard && !['spell', 'trap'].includes(sourceCard.frameType) ? sourceCard : {
       frameType: mapFrameType(card.type, card.frameType),
       attribute: card.attribute ?? null,
       level: card.level ?? card.rank ?? card.linkval ?? null,
       race: card.race,
       type: card.type,
       atk: card.atk ?? null,
-      def: card.def ?? null,
+      def: card.def ?? null
+    };
+    cards.push({
+      ...eventCard,
+      id,
+      name: source.ko_name || previousNames.get(id) || card.name,
+      nameEn: card.name,
       image_url: typeof image === 'string' && image.startsWith('https://') ? image : null
     });
   }
