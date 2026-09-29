@@ -1,3 +1,5 @@
+import { t } from './i18n.js';
+
 // Special Rules Checkers for Master Duel
 
 export function isFrameMatch(card, frameToMatch) {
@@ -46,77 +48,28 @@ export function isLevelMatch(card, levelsToMatch) {
 
 export function translateAttribute(attr) {
   if (!attr) return attr;
-  const map = {
-    LIGHT: '빛',
-    DARK: '어둠',
-    WATER: '물',
-    FIRE: '화염',
-    EARTH: '땅',
-    WIND: '바람',
-    DIVINE: '신'
-  };
-  return map[attr.toUpperCase()] || attr;
+  const key = attr.toUpperCase();
+  const translated = t(`attributes.${key}`);
+  return translated === `attributes.${key}` ? attr : translated;
 }
 
 export function translateFrame(frame) {
   if (!frame) return frame;
-  const map = {
-    normal: '일반 몬스터',
-    effect: '효과 몬스터',
-    fusion: '융합 몬스터',
-    synchro: '싱크로 몬스터',
-    xyz: '엑시즈 몬스터',
-    link: '링크 몬스터',
-    ritual: '의식 몬스터',
-    normal_pendulum: '일반 펜듈럼',
-    effect_pendulum: '효과 펜듈럼',
-    fusion_pendulum: '융합 펜듈럼',
-    synchro_pendulum: '싱크로 펜듈럼',
-    xyz_pendulum: '엑시즈 펜듈럼',
-    ritual_pendulum: '의식 펜듈럼',
-    spell: '마법',
-    trap: '함정'
-  };
-  return map[frame.toLowerCase()] || frame;
+  const value = frame.toLowerCase();
+  const translated = t(`frames.${value}`);
+  return translated === `frames.${value}` ? frame : translated;
 }
 
 export function translateRace(race) {
   if (!race) return race;
-  const map = {
-    Dragon: '드래곤족',
-    Spellcaster: '마법사족',
-    Zombie: '언데드족',
-    Warrior: '전사족',
-    'Beast-Warrior': '야수전사족',
-    Beast: '야수족',
-    'Winged Beast': '비행야수족',
-    Fiend: '악마족',
-    Fairy: '천사족',
-    Insect: '곤충족',
-    Dinosaur: '공룡족',
-    Reptile: '파충류족',
-    Fish: '어류족',
-    'Sea Serpent': '해룡족',
-    Aqua: '물족',
-    Pyro: '화염족',
-    Thunder: '번개족',
-    Rock: '암석족',
-    Plant: '식물족',
-    Machine: '기계족',
-    Psychic: '사이킥족',
-    Wyrm: '환룡족',
-    Cyberse: '사이버스족',
-    Illusion: '환상마족',
-    'Divine-Beast': '환신야수족',
-    'Creator-God': '창조신족'
-  };
-  return map[race] || race;
+  const translated = t(`races.${race}`);
+  return translated === `races.${race}` ? race : translated;
 }
 
 export function renderCardStatsHTML(card) {
   if (card.frameType === 'spell' || card.frameType === 'trap') {
-    const typeKR = card.frameType === 'spell' ? '마법' : '함정';
-    const subType = translateRace(card.race) || '일반';
+    const typeKR = translateFrame(card.frameType);
+    const subType = translateRace(card.race) || t('frames.normal');
     return `
       <div class="search-dropdown-stats">
         <span class="stat-badge frame-${card.frameType}">${typeKR}</span>
@@ -160,7 +113,7 @@ export function filterCandidatesByHints(cards, hints) {
       if (hint.type === 'direct') {
         // Revealed values describe the target exactly; partial matches apply only to guesses.
         if (hint.stat === 'frameType') {
-          isMatch = (card.frameType === hint.value);
+          isMatch = hint.value === 'pendulum' ? card.frameType.includes('_pendulum') : card.frameType === hint.value;
         } else if (hint.stat === 'level') {
           isMatch = (getTargetRulesLevel(card) === hint.value);
         } else {

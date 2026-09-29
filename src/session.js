@@ -1,4 +1,5 @@
 import { STAT_KEYS, getTargetRulesLevel } from './utils.js';
+import { t } from './i18n.js';
 const SESSION_KEY = 'md-decoder-session-v1';
 let batchSequence = 0;
 
@@ -11,6 +12,11 @@ export function budget(value, minimum = 0) {
   const number = Number(value);
   return Number.isFinite(number) ? Math.min(999, Math.max(minimum, Math.floor(number))) : minimum;
 }
+export function consumeAttempt(value) {
+  const available = budget(value);
+  const cost = available > 0 ? 1 : 0;
+  return { remaining: available - cost, cost };
+}
 export function parseStatInput(value, stat) {
   const text = value.trim();
   if (!text) return undefined;
@@ -18,7 +24,7 @@ export function parseStatInput(value, stat) {
   if (text === '?' && stat !== 'level') return -1;
   const number = Number(text);
   const minimum = stat === 'level' ? 0 : -1;
-  if (!Number.isInteger(number) || number < minimum || (stat === 'level' && number > 13)) throw new Error('레벨은 0~13의 정수, 공격력·수비력은 정수 또는 ?로 입력하세요.');
+  if (!Number.isInteger(number) || number < minimum || (stat === 'level' && number > 13)) throw new Error(t('dynamic.invalidStats'));
   return number;
 }
 export function removeInputBatch(hints, batchId) {

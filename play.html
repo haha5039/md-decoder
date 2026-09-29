@@ -115,35 +115,44 @@
       }
     </style>
   </head>
-  <body>
+  <body data-i18n-title="play.title">
     <div id="app">
       <header class="app-header">
         <div class="header-logo">
           <span class="logo-icon">🃏</span>
           <div class="logo-text">
             <h1>Card Decoder - Play Mode</h1>
-            <p>직접 카드 디코더 미니게임을 플레이해보세요!</p>
+            <p data-i18n="play.subtitle">직접 카드 디코더 미니게임을 플레이해보세요!</p>
           </div>
         </div>
-        <nav class="mode-nav">
-          <a href="index.html" class="nav-tab">
-            <span>🔍</span>
-            <span>추론 도우미</span>
-          </a>
-          <a href="play.html" class="nav-tab active">
-            <span>🎮</span>
-            <span>플레이 모드</span>
-          </a>
-        </nav>
+        <div class="header-actions">
+          <nav class="mode-nav">
+            <a href="index.html" class="nav-tab">
+              <span>🔍</span>
+              <span data-i18n="nav.solver">추론 도우미</span>
+            </a>
+            <a href="play.html" class="nav-tab active">
+              <span>🎮</span>
+              <span data-i18n="nav.play">플레이 모드</span>
+            </a>
+          </nav>
+          <label class="locale-picker">
+            <span data-i18n="language.label">언어</span>
+            <select id="localeSelect" aria-label="Language" data-i18n-aria-label="language.label">
+              <option value="ko">한국어</option>
+              <option value="en">English</option>
+            </select>
+          </label>
+        </div>
       </header>
 
-      <p class="hint-desc" style="text-align:center;">연습 모드: 도전·힌트 횟수는 제한하지 않습니다. 실제 이벤트의 일일 지급, 보너스 힌트 및 보상은 재현하지 않습니다.</p>
+      <p class="hint-desc" data-i18n="play.practice" style="text-align:center;">연습 모드: 도전·힌트 횟수는 제한하지 않습니다. 실제 이벤트의 일일 지급, 보너스 힌트 및 보상은 재현하지 않습니다.</p>
       <p id="playNotice" role="status" hidden></p>
       <main class="container" style="max-width: 1200px; margin: 0 auto; display: flex; flex-direction: column; gap: 1.5rem;">
         
         <section class="panel mb-4" style="text-align: center;">
-          <h2 style="margin-bottom: 1rem;">새 게임 시작</h2>
-          <button id="startGameBtn" class="btn-primary" style="font-size: 1.2rem; padding: 0.8rem 2rem; width: auto; margin: 0 auto;">무작위 카드로 시작하기</button>
+          <h2 data-i18n="play.newGame" style="margin-bottom: 1rem;">새 게임 시작</h2>
+          <button id="startGameBtn" class="btn-primary" data-i18n="play.startRandom" style="font-size: 1.2rem; padding: 0.8rem 2rem; width: auto; margin: 0 auto;">무작위 카드로 시작하기</button>
         </section>
 
         <div id="gameArea" style="display: none; flex-direction: column; gap: 1.5rem;">
@@ -154,32 +163,32 @@
             <div style="display: flex; flex-direction: column; gap: 1.5rem; position: relative; z-index: 10;">
               <section class="panel">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-                  <h2 style="margin: 0;">밝혀진 정보</h2>
-                  <button id="getHintBtn" class="btn-primary" style="padding: 0.5rem 1rem; font-size: 0.9rem; width: auto; box-shadow: none;">💡 무작위 힌트 받기</button>
+                  <h2 data-i18n="play.revealed" style="margin: 0;">밝혀진 정보</h2>
+                  <button id="getHintBtn" class="btn-primary" data-i18n="play.randomHint" style="padding: 0.5rem 1rem; font-size: 0.9rem; width: auto; box-shadow: none;">💡 무작위 힌트 받기</button>
                 </div>
                 <div class="hint-grid">
                   <div class="hint-box">
-                    <span class="hint-label">카드 프레임</span>
+                    <span class="hint-label" data-i18n="stats.frameType">카드 프레임</span>
                     <span class="hint-val" id="hint-frameType">???</span>
                   </div>
                   <div class="hint-box">
-                    <span class="hint-label">속성</span>
+                    <span class="hint-label" data-i18n="stats.attribute">속성</span>
                     <span class="hint-val" id="hint-attribute">???</span>
                   </div>
                   <div class="hint-box">
-                    <span class="hint-label">레벨 / 랭크 / 링크</span>
+                    <span class="hint-label" data-i18n="stats.level">레벨 / 랭크 / 링크</span>
                     <span class="hint-val" id="hint-level">???</span>
                   </div>
                   <div class="hint-box">
-                    <span class="hint-label">종족</span>
+                    <span class="hint-label" data-i18n="stats.race">종족</span>
                     <span class="hint-val" id="hint-race">???</span>
                   </div>
                   <div class="hint-box">
-                    <span class="hint-label">공격력</span>
+                    <span class="hint-label" data-i18n="stats.atk">공격력</span>
                     <span class="hint-val" id="hint-atk">???</span>
                   </div>
                   <div class="hint-box">
-                    <span class="hint-label">수비력</span>
+                    <span class="hint-label" data-i18n="stats.def">수비력</span>
                     <span class="hint-val" id="hint-def">???</span>
                   </div>
                 </div>
@@ -187,15 +196,15 @@
 
               <section class="panel">
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-                <h2 style="margin: 0;">정답 추측하기</h2>
-                <button id="undoGuessBtn" class="btn-secondary" style="font-size: 0.85rem; padding: 0.4rem 1rem; width: auto; box-shadow: none; background: rgba(59, 130, 246, 0.2); border-color: var(--accent-blue);">되돌리기</button>
+                <h2 data-i18n="play.guessTitle" style="margin: 0;">정답 추측하기</h2>
+                <button id="undoGuessBtn" class="btn-secondary" data-i18n="main.undo" style="font-size: 0.85rem; padding: 0.4rem 1rem; width: auto; box-shadow: none; background: rgba(59, 130, 246, 0.2); border-color: var(--accent-blue);">되돌리기</button>
               </div>
                 <div style="margin-bottom: 1rem; color: var(--text-light); display: flex; gap: 1.25rem; flex-wrap: wrap;">
-                  <div>현재 시도 횟수: <strong id="attemptCount" style="color: var(--accent-gold); font-size: 1.3rem;">0</strong>번</div>
-                  <div>무작위 힌트 사용 수: <strong id="hintUseCount" style="color: var(--accent-gold); font-size: 1.3rem;">0</strong>번</div>
+                  <div><span data-i18n="play.currentAttempts">현재 시도 횟수:</span> <strong id="attemptCount" style="color: var(--accent-gold); font-size: 1.3rem;">0</strong><span data-i18n="play.times">번</span></div>
+                  <div><span data-i18n="play.randomHintsUsed">무작위 힌트 사용 수:</span> <strong id="hintUseCount" style="color: var(--accent-gold); font-size: 1.3rem;">0</strong><span data-i18n="play.times">번</span></div>
                 </div>
                 <div style="position: relative;">
-                  <input type="text" id="guessInput" class="search-input" placeholder="카드 이름을 검색하여 제출하세요..." autocomplete="off">
+                  <input type="text" id="guessInput" class="search-input" placeholder="카드 이름을 검색하여 제출하세요..." data-i18n-placeholder="play.guessPlaceholder" autocomplete="off">
                   <ul id="guessDropdown" class="search-dropdown" style="display: none;"></ul>
                 </div>
               </section>
@@ -204,10 +213,10 @@
             <!-- Right Col: Candidates -->
             <section class="panel" style="display: flex; flex-direction: column; position: relative; z-index: 1;">
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-                <h2 style="margin: 0;">정답 가능성이 있는 카드</h2>
+                <h2 data-i18n="play.candidatesTitle" style="margin: 0;">정답 가능성이 있는 카드</h2>
                 <span id="candidateCount" style="background: var(--accent-gold); color: #000; padding: 0.2rem 0.6rem; border-radius: 12px; font-weight: bold; font-size: 0.9rem;">0장</span>
               </div>
-              <p style="color: var(--text-light); font-size: 0.85rem; margin-bottom: 1rem;">밝혀진 힌트와 제출 내역(O/X)을 기반으로 남은 후보 카드를 보여줍니다. 카드를 클릭하면 바로 추측으로 제출합니다.</p>
+              <p data-i18n="play.candidatesDesc" style="color: var(--text-light); font-size: 0.85rem; margin-bottom: 1rem;">밝혀진 힌트와 제출 내역(O/X)을 기반으로 남은 후보 카드를 보여줍니다. 카드를 클릭하면 바로 추측으로 제출합니다.</p>
               
               <div id="candidateGrid" class="candidate-grid">
                 <!-- Candidates will be injected here -->
@@ -217,20 +226,20 @@
 
           <!-- Bottom Row: Guess History (Full Width) -->
           <section class="panel" id="historySection">
-            <h2>추측 히스토리</h2>
+            <h2 data-i18n="play.history">추측 히스토리</h2>
             <div class="table-container mt-4" style="overflow-x: auto;">
               <table class="history-table" style="width: 100%; border-collapse: collapse; text-align: left; min-width: 600px;">
                 <thead>
                   <tr>
-                    <th style="padding: 0.75rem; border-bottom: 2px solid var(--accent-blue); width: 60px;">카드</th>
-                    <th style="padding: 0.75rem; border-bottom: 2px solid var(--accent-blue);">이름</th>
-                    <th style="padding: 0.75rem; border-bottom: 2px solid var(--accent-blue);">카드 프레임</th>
-                    <th style="padding: 0.75rem; border-bottom: 2px solid var(--accent-blue);">속성</th>
-                    <th style="padding: 0.75rem; border-bottom: 2px solid var(--accent-blue);">레벨 / 랭크 / 링크</th>
-                    <th style="padding: 0.75rem; border-bottom: 2px solid var(--accent-blue);">종족</th>
-                    <th style="padding: 0.75rem; border-bottom: 2px solid var(--accent-blue);">공격력</th>
-                    <th style="padding: 0.75rem; border-bottom: 2px solid var(--accent-blue);">수비력</th>
-                    <th style="padding: 0.75rem; border-bottom: 2px solid var(--accent-blue); width: 80px; text-align: center;">되돌리기</th>
+                    <th data-i18n="play.table.card" style="padding: 0.75rem; border-bottom: 2px solid var(--accent-blue); width: 60px;">카드</th>
+                    <th data-i18n="play.table.name" style="padding: 0.75rem; border-bottom: 2px solid var(--accent-blue);">이름</th>
+                    <th data-i18n="stats.frameType" style="padding: 0.75rem; border-bottom: 2px solid var(--accent-blue);">카드 프레임</th>
+                    <th data-i18n="stats.attribute" style="padding: 0.75rem; border-bottom: 2px solid var(--accent-blue);">속성</th>
+                    <th data-i18n="stats.level" style="padding: 0.75rem; border-bottom: 2px solid var(--accent-blue);">레벨 / 랭크 / 링크</th>
+                    <th data-i18n="stats.race" style="padding: 0.75rem; border-bottom: 2px solid var(--accent-blue);">종족</th>
+                    <th data-i18n="stats.atk" style="padding: 0.75rem; border-bottom: 2px solid var(--accent-blue);">공격력</th>
+                    <th data-i18n="stats.def" style="padding: 0.75rem; border-bottom: 2px solid var(--accent-blue);">수비력</th>
+                    <th data-i18n="play.table.undo" style="padding: 0.75rem; border-bottom: 2px solid var(--accent-blue); width: 80px; text-align: center;">되돌리기</th>
                   </tr>
                 </thead>
                 <tbody id="historyTbody">
@@ -241,20 +250,20 @@
           </section>
       </main>
       <footer class="app-footer" style="margin-top: 3rem; padding: 2rem 1rem; border-top: 1px solid var(--border); text-align: center; font-size: 0.85rem; color: var(--text-light); line-height: 1.6;">
-        <p>본 서비스는 개인적인 학습 및 연구 목적으로 개발되었으며, AI(Antigravity)를 활용하여 제작되었습니다.</p>
-        <p>카드 데이터는 <a href="https://ygoprodeck.com/api-guide/" target="_blank" style="color: var(--accent-blue); text-decoration: underline;">YGOPRODeck API</a>를 사용하고 있습니다.</p>
-        <p style="margin-top: 0.5rem;">GitHub 저장소: <a href="https://github.com/haha5039/md-decoder" target="_blank" style="color: var(--accent-gold); text-decoration: underline; font-weight: bold;">github.com/haha5039/md-decoder</a></p>
+        <p data-i18n="footer.purpose">본 서비스는 개인적인 학습 및 연구 목적으로 개발되었으며, AI(Antigravity)를 활용하여 제작되었습니다.</p>
+        <p><span data-i18n="footer.data">Master Duel 카드 정보와</span> <a href="https://ygoprodeck.com/api-guide/" target="_blank" rel="noopener noreferrer" data-i18n="footer.dataLink" style="color: var(--accent-blue); text-decoration: underline;">YGOPRODeck 이미지 API</a><span data-i18n="footer.dataSuffix">를 사용하고 있습니다.</span></p>
+        <p style="margin-top: 0.5rem;"><span data-i18n="footer.repo">GitHub 저장소:</span> <a href="https://github.com/haha5039/md-decoder" target="_blank" style="color: var(--accent-gold); text-decoration: underline; font-weight: bold;">github.com/haha5039/md-decoder</a></p>
       </footer>
 
       <!-- Challenge Confirmation Modal -->
       <div id="confirmModal" class="modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); align-items: center; justify-content: center; z-index: 999;">
         <div class="panel" style="max-width: 400px; width: 90%; text-align: center; border: 2px solid var(--accent-blue); box-shadow: 0 0 30px rgba(37, 99, 235, 0.3);">
-          <h2 style="color: var(--accent-blue); font-size: 1.5rem; margin-bottom: 1rem;">🃏 도전 카드 확인</h2>
+          <h2 data-i18n="play.confirmTitle" style="color: var(--accent-blue); font-size: 1.5rem; margin-bottom: 1rem;">🃏 도전 카드 확인</h2>
           <p id="confirmMsg" style="margin-bottom: 1.5rem;"><strong>[카드 이름]</strong> 카드로 판정(도전)하시겠습니까?</p>
           <img id="confirmImg" src="" alt="도전 카드" style="max-width: 60%; border-radius: var(--radius); margin-bottom: 1.5rem; border: 2px solid var(--border);">
           <div style="display: flex; gap: 1rem; justify-content: center;">
-            <button id="cancelConfirmBtn" class="btn-secondary" style="width: auto; padding: 0.6rem 1.5rem;">취소</button>
-            <button id="okConfirmBtn" class="btn-primary" style="width: auto; padding: 0.6rem 1.5rem;">도전하기</button>
+            <button id="cancelConfirmBtn" class="btn-secondary" data-i18n="common.cancel" style="width: auto; padding: 0.6rem 1.5rem;">취소</button>
+            <button id="okConfirmBtn" class="btn-primary" data-i18n="play.confirmButton" style="width: auto; padding: 0.6rem 1.5rem;">도전하기</button>
           </div>
         </div>
       </div>
@@ -262,14 +271,14 @@
       <!-- Victory Modal -->
       <div id="victoryModal" class="modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); align-items: center; justify-content: center; z-index: 1000;">
         <div class="panel" style="max-width: 480px; width: 90%; text-align: center; border: 2px solid var(--accent-gold); box-shadow: 0 0 30px rgba(243, 156, 18, 0.3); max-height: 90vh; overflow-y: auto;">
-          <h2 style="color: var(--accent-gold); font-size: 2rem; margin-bottom: 1rem;">🎉 정답입니다! 🎉</h2>
+          <h2 data-i18n="play.victoryTitle" style="color: var(--accent-gold); font-size: 2rem; margin-bottom: 1rem;">🎉 정답입니다! 🎉</h2>
           <p id="victoryMsg" style="margin-bottom: 1.5rem;">정답 카드: <strong>???</strong><br>총 시도 횟수: <strong>?</strong></p>
           <div id="victoryCardsContainer" style="display: flex; flex-direction: column; gap: 1rem; margin-bottom: 1.5rem;">
             <!-- Dynamic content will be injected here -->
           </div>
           <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
-            <button id="closeVictoryBtn" class="btn-secondary" style="font-size: 1.1rem; padding: 0.8rem 2rem; width: auto;">닫기</button>
-            <button id="restartGameBtn" class="btn-primary" style="font-size: 1.1rem; padding: 0.8rem 2rem; width: auto;">새 게임 시작</button>
+            <button id="closeVictoryBtn" class="btn-secondary" data-i18n="common.close" style="font-size: 1.1rem; padding: 0.8rem 2rem; width: auto;">닫기</button>
+            <button id="restartGameBtn" class="btn-primary" data-i18n="play.restart" style="font-size: 1.1rem; padding: 0.8rem 2rem; width: auto;">새 게임 시작</button>
           </div>
         </div>
       </div>

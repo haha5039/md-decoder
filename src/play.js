@@ -2,8 +2,10 @@ import './style.css';
 import { allCards as rawCards } from './cards_data.js';
 import { isFrameMatch, isLevelMatch, getValidLevels, renderCardStatsHTML, translateAttribute, translateFrame, translateRace, getTargetRulesLevel, filterCandidatesByHints, getGuessFeedback, escapeHTML, formatStat } from './utils.js';
 import { getCachedCards } from './db.js';
+import { alternateCardName, initializeI18n, localizeCardName, t } from './i18n.js';
 
 let allCards = [];
+initializeI18n(() => window.location.reload());
 
 
 // DOM Elements
@@ -100,7 +102,7 @@ function initGame() {
   updateCandidates();
   
   // Update UI Layout
-  startGameBtn.textContent = '게임 재시작 (다른 카드 뽑기)';
+  startGameBtn.textContent = t('play.restartRandom');
   gameArea.style.display = 'grid';
   victoryModal.style.display = 'none';
   confirmModal.style.display = 'none';
@@ -110,10 +112,10 @@ function initGame() {
 
 function selectCardForGuess(card) {
   if (gameWon) return;
-  if (history.some(row => !row.isHint && row.card.id === card.id)) { showPlayMessage('이미 판정한 카드입니다. 도전 횟수는 차감하지 않습니다.'); return; }
+  if (history.some(row => !row.isHint && row.card.id === card.id)) { showPlayMessage(t('dynamic.playDuplicate')); return; }
   showPlayMessage('');
   pendingGuessCard = card;
-  confirmMsg.innerHTML = `<strong>[${escapeHTML(card.name)}]</strong> 카드로 판정(도전)하시겠습니까?`;
+  confirmMsg.innerHTML = t('dynamic.playConfirm', { card: `<strong>${escapeHTML(localizeCardName(card))}</strong>` });
   confirmImg.src = card.image_url || '';
   confirmModal.style.display = 'flex';
 }
@@ -142,10 +144,10 @@ function revealRandomHint(isInitial = false) {
   // Push virtual hint row to history
   const hintRow = {
     isHint: true,
-    hintType: isInitial ? '최초 힌트' : '무작위 힌트',
+    hintType: isInitial ? 'initial' : 'random',
     key: randomKey,
     card: {
-      name: isInitial ? '💡 최초 힌트 제공' : '💡 무작위 힌트 개방'
+      name: isInitial ? t('dynamic.initialHintRow') : t('dynamic.randomHintRow')
     }
   };
   history.unshift(hintRow);
@@ -188,10 +190,10 @@ function updateHintUI() {
   const unrevealed = statKeys.filter(k => !revealedHints[k]);
   getHintBtn.disabled = gameWon || unrevealed.length === 0;
   if (unrevealed.length === 0) {
-    getHintBtn.textContent = '모든 힌트 공개됨';
+    getHintBtn.textContent = t('play.allHints');
     getHintBtn.style.opacity = '0.5';
   } else {
-    getHintBtn.textContent = '💡 무작위 힌트 받기';
+    getHintBtn.textContent = t('play.randomHint');
     getHintBtn.style.opacity = '1';
   }
 }
@@ -219,12 +221,14 @@ guessInput.addEventListener('input', (e) => {
       
       const imgUrl = escapeHTML(card.image_url || '');
       const statsHTML = renderCardStatsHTML(card);
+      const displayName = localizeCardName(card);
+      const alternateName = alternateCardName(card);
       
       li.innerHTML = `
-        <img src="${imgUrl}" alt="${escapeHTML(card.name)}" onerror="this.onerror=null;this.style.visibility='hidden'">
+        <img src="${imgUrl}" alt="${escapeHTML(displayName)}" onerror="this.onerror=null;this.style.visibility='hidden'">
         <div class="search-dropdown-info">
-          <div class="search-dropdown-title">${escapeHTML(card.name)}</div>
-          <div class="search-dropdown-subtitle">${escapeHTML(card.nameEn || '')}</div>
+          <div class="search-dropdown-title">${escapeHTML(displayName)}</div>
+          <div class="search-dropdown-subtitle">${escapeHTML(alternateName)}</div>
           ${statsHTML}
         </div>
       `;
@@ -330,7 +334,7 @@ function updateCandidates() {
 }
 
 function renderCandidates() {
-  candidateCount.textContent = `${candidates.length}장`;
+  candidateCount.textContent = t('common.cardCount', { count: candidates.length });
   candidateGrid.innerHTML = '';
   
   // Limit to 48 for performance (aligns with 6 columns)
@@ -341,6 +345,7 @@ function renderCandidates() {
     cardEl.className = 'candidate-card';
     
     const imgUrl = escapeHTML(card.image_url || '');
+    const displayName = localizeCardName(card);
     const levelLabel = card.frameType === 'link' ? 'Lnk' : (card.frameType.startsWith('xyz') ? 'Rk' : 'Lv');
     const lvText = getTargetRulesLevel(card) != null ? `${levelLabel}.${getTargetRulesLevel(card)}` : '';
     const attrText = translateAttribute(card.attribute) || '';
@@ -348,8 +353,8 @@ function renderCandidates() {
     const defText = formatStat(card.def);
     
     cardEl.innerHTML = `
-      <img src="${imgUrl}" alt="${escapeHTML(card.name)}" loading="lazy" onerror="this.onerror=null;this.style.visibility='hidden'">
-      <div class="candidate-name" title="${escapeHTML(card.name)}">${escapeHTML(card.name)}</div>
+      <img src="${imgUrl}" alt="${escapeHTML(displayName)}" loading="lazy" onerror="this.onerror=null;this.style.visibility='hidden'">
+      <div class="candidate-name" title="${escapeHTML(displayName)}">${escapeHTML(displayName)}</div>
       <div class="candidate-stats">
         <div class="candidate-stats-row">
           <span class="stat-badge frame-${card.frameType.toLowerCase().replace('_pendulum', '')}" style="font-size: 0.65rem; padding: 0.1rem 0.35rem;">${escapeHTML(translateFrame(card.frameType))}</span>
@@ -376,17 +381,17 @@ function renderCandidates() {
 function getHintText(key, card) {
   let val = key === 'level' ? getTargetRulesLevel(card) : card[key];
   if (key === 'frameType') {
-    return `카드 프레임: ${translateFrame(val)}`;
+    return `${t('stats.frameType')}: ${translateFrame(val)}`;
   } else if (key === 'attribute') {
-    return `속성: ${translateAttribute(val)}`;
+    return `${t('stats.attribute')}: ${translateAttribute(val)}`;
   } else if (key === 'level') {
-    return `레벨/랭크/링크: ${val}`;
+    return `${t('stats.level')}: ${val}`;
   } else if (key === 'race') {
-    return `종족: ${translateRace(val)}`;
+    return `${t('stats.race')}: ${translateRace(val)}`;
   } else if (key === 'atk') {
-    return `공격력: ${formatStat(val)}`;
+    return `${t('stats.atk')}: ${formatStat(val)}`;
   } else if (key === 'def') {
-    return `수비력: ${formatStat(val)}`;
+    return `${t('stats.def')}: ${formatStat(val)}`;
   }
   return '';
 }
@@ -409,7 +414,7 @@ function rebuildGameStateFromHistory() {
     if (row.isHint) {
       revealedHints[row.key] = true;
       systemRevealedKeys.push(row.key);
-      if (row.hintType === '무작위 힌트') {
+      if (row.hintType === 'random') {
         hintUseCount++;
       }
     } else {
@@ -451,7 +456,9 @@ function renderHistory() {
     
     // Name cell
     const nameTd = document.createElement('td');
-    nameTd.textContent = row.card.name;
+    nameTd.textContent = row.isHint
+      ? t(row.hintType === 'initial' ? 'dynamic.initialHintRow' : 'dynamic.randomHintRow')
+      : localizeCardName(row.card);
     nameTd.style.padding = '0.75rem';
     nameTd.style.borderBottom = '1px solid var(--accent-blue)';
     if (row.isHint) {
@@ -511,7 +518,7 @@ function renderHistory() {
     actionTd.style.borderBottom = '1px solid var(--accent-blue)';
     actionTd.style.textAlign = 'center';
     
-    if (row.isHint && row.hintType === '최초 힌트') {
+    if (row.isHint && row.hintType === 'initial') {
       actionTd.textContent = '-';
       actionTd.style.color = 'var(--text-muted)';
       actionTd.style.opacity = '0.5';
@@ -519,6 +526,7 @@ function renderHistory() {
       const delBtn = document.createElement('button');
       delBtn.className = 'btn-delete-history';
       delBtn.innerHTML = '❌';
+      delBtn.setAttribute('aria-label', t('dynamic.cancelInput'));
       delBtn.style = 'background: none; border: none; color: #ef4444; cursor: pointer; padding: 0 0.5rem; font-size: 1rem;';
       delBtn.onclick = () => {
         const index = history.indexOf(row);
@@ -538,10 +546,7 @@ function renderHistory() {
 function showVictory(guessCard) {
   const equivalentCards = getEquivalentCards(targetCard);
   
-  victoryMsg.innerHTML = `
-    총 시도 횟수: <strong style="color:var(--accent-gold); font-size:1.4rem;">${attempts}번</strong><br>
-    무작위 힌트 사용 수: <strong style="color:var(--accent-gold); font-size:1.4rem;">${hintUseCount}번</strong>
-  `;
+  victoryMsg.innerHTML = t('dynamic.victoryStats', { attempts, hints: hintUseCount });
   
   const container = document.getElementById('victoryCardsContainer');
   container.innerHTML = '';
@@ -549,10 +554,11 @@ function showVictory(guessCard) {
   // 1. Target Card Section
   const targetDiv = document.createElement('div');
   targetDiv.style.marginBottom = '1rem';
+  const targetName = localizeCardName(targetCard);
   targetDiv.innerHTML = `
-    <div style="font-weight: bold; color: var(--accent-gold); margin-bottom: 0.5rem; font-size: 1.1rem;">🎯 정답 카드</div>
-    <img src="${escapeHTML(targetCard.image_url)}" alt="${escapeHTML(targetCard.name)}" style="max-width: 140px; border-radius: var(--radius); border: 2px solid var(--accent-gold);">
-    <div style="font-weight: 600; margin-top: 0.25rem; font-size: 1rem;">${escapeHTML(targetCard.name)}</div>
+    <div style="font-weight: bold; color: var(--accent-gold); margin-bottom: 0.5rem; font-size: 1.1rem;">${t('dynamic.targetCard')}</div>
+    <img src="${escapeHTML(targetCard.image_url)}" alt="${escapeHTML(targetName)}" style="max-width: 140px; border-radius: var(--radius); border: 2px solid var(--accent-gold);">
+    <div style="font-weight: 600; margin-top: 0.25rem; font-size: 1rem;">${escapeHTML(targetName)}</div>
   `;
   container.appendChild(targetDiv);
   
@@ -561,7 +567,7 @@ function showVictory(guessCard) {
   if (others.length > 0) {
     const othersDiv = document.createElement('div');
     othersDiv.innerHTML = `
-      <div style="font-weight: bold; color: var(--text-muted); margin-bottom: 0.5rem; font-size: 1.1rem;">👥 함께 인정되는 복수 정답 카드 (${others.length}장)</div>
+      <div style="font-weight: bold; color: var(--text-muted); margin-bottom: 0.5rem; font-size: 1.1rem;">${t('dynamic.equivalentCards', { count: others.length })}</div>
       <div style="display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; max-height: 180px; overflow-y: auto; padding: 0.5rem; background: rgba(0,0,0,0.15); border-radius: 8px;">
         ${others.map(c => {
           const isMyGuess = guessCard && c.id === guessCard.id;
@@ -571,10 +577,11 @@ function showVictory(guessCard) {
           const nameColor = isMyGuess ? '#2ecc71' : '#f8fafc';
           const nameWeight = isMyGuess ? 'bold' : 'normal';
           
+          const displayName = localizeCardName(c);
           return `
             <div style="text-align: center; width: 75px;">
-              <img src="${escapeHTML(c.image_url || '')}" alt="${escapeHTML(c.name)}" onerror="this.onerror=null;this.style.visibility='hidden'" style="width: 55px; border-radius: 4px; ${borderStyle}">
-              <div style="font-size: 0.65rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 0.15rem; color: ${nameColor}; font-weight: ${nameWeight};" title="${escapeHTML(c.name)}">${escapeHTML(c.name)}</div>
+              <img src="${escapeHTML(c.image_url || '')}" alt="${escapeHTML(displayName)}" onerror="this.onerror=null;this.style.visibility='hidden'" style="width: 55px; border-radius: 4px; ${borderStyle}">
+              <div style="font-size: 0.65rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 0.15rem; color: ${nameColor}; font-weight: ${nameWeight};" title="${escapeHTML(displayName)}">${escapeHTML(displayName)}</div>
             </div>
           `;
         }).join('')}
@@ -599,8 +606,8 @@ if (undoGuessBtn) {
   undoGuessBtn.addEventListener('click', () => {
     if (history.length === 0) return;
     const latest = history[0];
-    if (latest.isHint && latest.hintType === '최초 힌트') {
-      showPlayMessage("최초 힌트는 되돌릴 수 없습니다.");
+    if (latest.isHint && latest.hintType === 'initial') {
+      showPlayMessage(t('dynamic.initialUndoBlocked'));
       return;
     }
     history.shift();
@@ -610,7 +617,7 @@ if (undoGuessBtn) {
 
 async function loadGameDatabase() {
   startGameBtn.disabled = true;
-  startGameBtn.textContent = '데이터 로딩 중...';
+  startGameBtn.textContent = t('play.loadingData');
   try {
     const cached = await getCachedCards();
     if (cached && cached.length > 0) {
@@ -631,7 +638,7 @@ async function loadGameDatabase() {
   });
 
   startGameBtn.disabled = false;
-  startGameBtn.textContent = '무작위 카드로 시작하기';
+  startGameBtn.textContent = t('play.startRandom');
 }
 
 // Init database

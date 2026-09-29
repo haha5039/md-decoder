@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { allocateAttempts, chooseCriteria, createSolver, distinctScores, sortScores } from '../src/solver.js';
+import { allocateAttempts, chooseCriteria, createSolver, distinctScores, recommendHintUse, sortScores } from '../src/solver.js';
 import { getGuessFeedback, getValidLevels, getTargetRulesLevel, filterCandidatesByHints, hintsFromFeedback } from '../src/utils.js';
 import { allCards } from '../src/cards_data.js';
 
@@ -94,6 +94,25 @@ test('attempts are reserved evenly across remaining challenges', () => {
   assert.equal(allocateAttempts(4, 4), 1);
   assert.equal(allocateAttempts(4, 1), 4);
   assert.equal(allocateAttempts(0, 3), 0);
+});
+
+test('random hint value uses the current candidate distribution and best follow-up guess', () => {
+  const cards = [1000, 2000, 3000, 4000].map((atk, index) => card(index + 1, { atk }));
+  const revealedStats = ['frameType', 'level', 'attribute', 'race', 'def'];
+  const result = createSolver(cards)({ candidateIds: cards.map(item => item.id), revealedStats });
+  close(result.hint.expectedRemaining, 1);
+  close(result.hint.currentOneShotProb, 0.25);
+  close(result.hint.expectedOneShotProb, 1);
+  close(result.hint.oneShotGain, 0.75);
+});
+
+test('hint recommendations react to measured current value instead of dividing by challenge count', () => {
+  const valuable = { unknownCount: 3, expectedRemaining: 20, oneShotGain: 0.12 };
+  const weak = { unknownCount: 3, expectedRemaining: 98, oneShotGain: 0.001 };
+  assert.equal(recommendHintUse({ attempts: 1, remainingHints: 1, candidateCount: 100, hint: valuable, bestGuessExpectedRemaining: 60 }).decision, 'use');
+  assert.equal(recommendHintUse({ attempts: 0, remainingHints: 1, candidateCount: 100, hint: valuable, bestGuessExpectedRemaining: 60 }).reason, 'beforeNextAttempt');
+  assert.equal(recommendHintUse({ attempts: 4, remainingHints: 9, candidateCount: 100, hint: weak, bestGuessExpectedRemaining: 20 }).decision, 'save');
+  assert.equal(recommendHintUse({ attempts: 4, remainingHints: 0, candidateCount: 100, hint: valuable, bestGuessExpectedRemaining: 60 }).reason, 'noHints');
 });
 
 test('known rules exceptions use correct identities and retain printed zero', () => {

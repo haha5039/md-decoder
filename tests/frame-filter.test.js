@@ -31,6 +31,12 @@ test('revealed compound frames are exact, even with the old partial-input flag',
   assert.deepEqual(filterCandidatesByHints(cards, [hint]), [{ frameType: 'fusion_pendulum' }]);
 });
 
+test('the Pendulum frame filter includes every compound Pendulum frame', () => {
+  const cards = ['effect', 'normal_pendulum', 'effect_pendulum', 'fusion_pendulum', 'link'].map(frameType => ({ frameType }));
+  const hint = { type: 'direct', stat: 'frameType', value: 'pendulum', isCorrect: true };
+  assert.deepEqual(filterCandidatesByHints(cards, [hint]).map(card => card.frameType), ['normal_pendulum', 'effect_pendulum', 'fusion_pendulum']);
+});
+
 test('guess feedback still matches either part of a Pendulum frame', () => {
   const cards = ['fusion', 'fusion_pendulum', 'synchro_pendulum', 'effect'].map(frameType => ({ frameType }));
   const guess = { type: 'guess', stat: 'frameType', value: 'fusion_pendulum', isCorrect: true };

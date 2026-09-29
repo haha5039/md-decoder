@@ -52,6 +52,7 @@ export function createSolver(cards) {
     for (const group of groups) {
       const guess = group[0];
       const branches = twoTurnExact ? new Map() : null;
+      const winningTargets = [];
       let winning = 0;
       let eliminated = 0;
       let winBits = 0n;
@@ -61,6 +62,7 @@ export function createSolver(cards) {
         const profile = matchMask(guess, target);
         if (profile === 63) {
           winning += target.weight;
+          winningTargets.push(j);
           if (twoTurnExact) winBits |= targetBits[j];
           continue;
         }
@@ -90,7 +92,7 @@ export function createSolver(cards) {
       const eliminationProb = eliminated / total;
       scores.push({ group, entropy, adjustedEntropy: entropy - eliminationProb * 2, expectedRemaining: squares / total, minimax,
         oneShotProb: winning / total, twoShotProb: null, eliminationProb, winning,
-        branches: twoTurnExact ? [...branches.values()] : null });
+        winningTargets, branches: twoTurnExact ? [...branches.values()] : null });
       if (winBits) winMasks.add(winBits);
     }
 
@@ -121,28 +123,64 @@ export function createSolver(cards) {
       }
     }
 
+    const unknown = STAT_KEYS.filter(stat => !revealedStats.includes(stat));
+    let hint = null;
+    if (unknown.length) {
+      const outcomes = unknown.map(stat => {
+        const buckets = new Map();
+        const targetValues = targets.map(target => JSON.stringify(getRevealedValue(target.card, stat)));
+        for (let index = 0; index < targets.length; index++) {
+          const target = targets[index];
+          const value = getRevealedValue(target.card, stat);
+          const key = targetValues[index];
+          const bucket = buckets.get(key) || { value, weight: 0, bestWins: 0 };
+          bucket.weight += target.weight;
+          buckets.set(key, bucket);
+        }
+        for (const score of scores) {
+          const winsByValue = new Map();
+          for (const index of score.winningTargets) {
+            const key = targetValues[index];
+            winsByValue.set(key, (winsByValue.get(key) || 0) + targets[index].weight);
+          }
+          for (const [key, wins] of winsByValue) {
+            const bucket = buckets.get(key);
+            if (wins > bucket.bestWins) bucket.bestWins = wins;
+          }
+        }
+        const values = [...buckets.values()];
+        return {
+          stat,
+          expectedRemaining: values.reduce((sum, bucket) => sum + bucket.weight * bucket.weight / total, 0),
+          expectedOneShotProb: values.reduce((sum, bucket) => sum + bucket.bestWins, 0) / total
+        };
+      });
+      const currentOneShotProb = Math.max(0, ...scores.map(score => score.oneShotProb));
+      const expectedOneShotProb = outcomes.reduce((sum, outcome) => sum + outcome.expectedOneShotProb, 0) / unknown.length;
+      hint = {
+        unknownCount: unknown.length,
+        expectedRemaining: outcomes.reduce((sum, outcome) => sum + outcome.expectedRemaining, 0) / unknown.length,
+        bestExpectedRemaining: Math.min(...outcomes.map(outcome => outcome.expectedRemaining)),
+        worstExpectedRemaining: Math.max(...outcomes.map(outcome => outcome.expectedRemaining)),
+        currentOneShotProb,
+        expectedOneShotProb,
+        oneShotGain: Math.max(0, expectedOneShotProb - currentOneShotProb),
+        outcomes
+      };
+    }
     const snipes = [], scouts = [];
-    for (const { group, branches, winning, ...score } of scores) {
+    for (const { group, branches, winning, winningTargets, ...score } of scores) {
       for (const { card } of group) {
         const item = { card, profileKey: group[0].key, equivalentChoices: group.length, ...score };
         // A card outside the candidate set may still win via partial-frame matching.
         (score.oneShotProb > 0 ? snipes : scouts).push(item);
       }
     }
-    const unknown = STAT_KEYS.filter(stat => !revealedStats.includes(stat));
-    let hint = null;
-    if (unknown.length) {
-      const outcomes = unknown.map(stat => {
-        const buckets = new Map();
-        for (const target of targets) {
-          const value = getRevealedValue(target.card, stat);
-          buckets.set(value, (buckets.get(value) || 0) + target.weight);
-        }
-        return [...buckets.values()].reduce((sum, count) => sum + count * count / total, 0);
-      });
-      hint = { unknownCount: unknown.length, expectedRemaining: outcomes.reduce((sum, count) => sum + count, 0) / unknown.length };
-    }
-    return { snipes, scouts, twoTurnExact, profileCount: targets.length, total, hint, durationMs: performance.now() - started };
+    return {
+      snipes, scouts, twoTurnExact, profileCount: targets.length, total, hint,
+      bestGuessExpectedRemaining: Math.min(...scores.map(score => score.expectedRemaining)),
+      durationMs: performance.now() - started
+    };
   };
 }
 
@@ -168,6 +206,38 @@ export function allocateAttempts(totalAttempts, problemsLeft) {
   const total = Number.isFinite(Number(totalAttempts)) ? Math.max(0, Math.floor(Number(totalAttempts))) : 0;
   const problems = Number.isFinite(Number(problemsLeft)) ? Math.max(1, Math.floor(Number(problemsLeft))) : 1;
   return problems > 1 ? Math.floor(total / problems) : total;
+}
+
+export function recommendHintUse({ attempts, remainingHints, candidateCount, hint, bestGuessExpectedRemaining }) {
+  const hints = Number.isFinite(Number(remainingHints)) ? Math.max(0, Math.floor(Number(remainingHints))) : 0;
+  const tries = Number.isFinite(Number(attempts)) ? Math.max(0, Math.floor(Number(attempts))) : 0;
+  const candidates = Number.isFinite(Number(candidateCount)) ? Math.max(0, Number(candidateCount)) : 0;
+  if (!hints) return { decision: 'unavailable', reason: 'noHints' };
+  if (!hint?.unknownCount || candidates <= 1) return {
+    decision: 'save', reason: 'noUnknownStats', expectedRemaining: candidates,
+    reductionRate: 0, oneShotGain: 0, relativeToGuess: 0
+  };
+
+  const expectedRemaining = Math.min(candidates, Math.max(0, hint.expectedRemaining));
+  const reductionRate = candidates ? (candidates - expectedRemaining) / candidates : 0;
+  const oneShotGain = Math.max(0, hint.oneShotGain || 0);
+  const guessRemaining = Number.isFinite(bestGuessExpectedRemaining) ? Math.max(0, bestGuessExpectedRemaining) : candidates;
+  const guessReduction = Math.max(0, candidates - guessRemaining);
+  const hintReduction = Math.max(0, candidates - expectedRemaining);
+  const relativeToGuess = guessReduction > 0 ? hintReduction / guessReduction : (hintReduction > 0 ? Infinity : 0);
+  const metrics = { expectedRemaining, reductionRate, oneShotGain, relativeToGuess };
+
+  if (hintReduction < 0.5 && oneShotGain < 0.001) return { decision: 'save', reason: 'noValue', ...metrics };
+  if (tries === 0) {
+    const usefulBeforeNext = oneShotGain >= 0.01 || reductionRate >= 0.15 || relativeToGuess >= 0.5;
+    return { decision: usefulBeforeNext ? 'use' : 'save', reason: usefulBeforeNext ? 'beforeNextAttempt' : 'weakValue', ...metrics };
+  }
+  if (tries === 1) {
+    const protectsLastAttempt = oneShotGain >= 0.01 || reductionRate >= 0.12 || relativeToGuess >= 0.4;
+    return { decision: protectsLastAttempt ? 'use' : 'save', reason: protectsLastAttempt ? 'lastAttempt' : 'weakValue', ...metrics };
+  }
+  const strongNow = oneShotGain >= 0.02 || reductionRate >= 0.30 || relativeToGuess >= 0.55;
+  return { decision: strongNow ? 'use' : 'save', reason: strongNow ? 'strongCurrentValue' : 'weakValue', ...metrics };
 }
 
 export function distinctScores(list, criteria) {

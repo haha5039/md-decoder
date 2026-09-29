@@ -9,43 +9,52 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
   </head>
-  <body>
+  <body data-i18n-title="app.title">
     <div id="app">
       <header class="app-header">
         <div class="header-logo">
           <span class="logo-icon">🃏</span>
           <div class="logo-text">
             <h1>Master Duel Card Decoder</h1>
-            <p>정답 카드를 효율적으로 찾아내는 도우미</p>
+            <p data-i18n="app.subtitle">정답 카드를 효율적으로 찾아내는 도우미</p>
           </div>
         </div>
-        <nav class="mode-nav">
-          <a href="index.html" class="nav-tab active">
-            <span>🔍</span>
-            <span>추론 도우미</span>
-          </a>
-          <a href="play.html" class="nav-tab">
-            <span>🎮</span>
-            <span>플레이 모드</span>
-          </a>
-        </nav>
+        <div class="header-actions">
+          <nav class="mode-nav">
+            <a href="index.html" class="nav-tab active">
+              <span>🔍</span>
+              <span data-i18n="nav.solver">추론 도우미</span>
+            </a>
+            <a href="play.html" class="nav-tab">
+              <span>🎮</span>
+              <span data-i18n="nav.play">플레이 모드</span>
+            </a>
+          </nav>
+          <label class="locale-picker">
+            <span data-i18n="language.label">언어</span>
+            <select id="localeSelect" aria-label="Language" data-i18n-aria-label="language.label">
+              <option value="ko">한국어</option>
+              <option value="en">English</option>
+            </select>
+          </label>
+        </div>
       </header>
       <main class="container">
         <!-- Left Panel: Input & Controls -->
         <section class="panel input-panel">
           <div class="flex-between" style="border-bottom: 1px solid var(--border); padding-bottom: 0.75rem; margin-bottom: 1rem;">
-            <h2 style="margin: 0; font-size: 1.15rem; display: flex; align-items: center; gap: 0.4rem; white-space: nowrap;">🔍 정보 입력 및 설정</h2>
+            <h2 style="margin: 0; font-size: 1.15rem; display: flex; align-items: center; gap: 0.4rem; white-space: nowrap;">🔍 <span data-i18n="main.inputSettings">정보 입력 및 설정</span></h2>
             <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: flex-end;">
-              <button id="nextChallengeBtn" class="btn-secondary btn-sm" style="margin: 0; padding: 0.45rem 0.9rem; font-size: 0.85rem; border-color: #22c55e; white-space: nowrap;">다음 문제</button>
-              <button id="undoHintBtn" class="btn-secondary btn-sm" style="margin: 0; padding: 0.45rem 0.9rem; font-size: 0.85rem; background: rgba(59, 130, 246, 0.2); border-color: var(--accent-blue); white-space: nowrap;">되돌리기</button>
-              <button id="resetBtn" class="btn-secondary btn-sm" style="margin: 0; padding: 0.45rem 0.9rem; font-size: 0.85rem; white-space: nowrap;">초기화</button>
+              <button id="nextChallengeBtn" class="btn-secondary btn-sm" data-i18n="main.nextChallenge" style="margin: 0; padding: 0.45rem 0.9rem; font-size: 0.85rem; border-color: #22c55e; white-space: nowrap;">다음 문제</button>
+              <button id="undoHintBtn" class="btn-secondary btn-sm" data-i18n="main.undo" style="margin: 0; padding: 0.45rem 0.9rem; font-size: 0.85rem; background: rgba(59, 130, 246, 0.2); border-color: var(--accent-blue); white-space: nowrap;">되돌리기</button>
+              <button id="resetBtn" class="btn-secondary btn-sm" data-i18n="main.reset" style="margin: 0; padding: 0.45rem 0.9rem; font-size: 0.85rem; white-space: nowrap;">초기화</button>
             </div>
           </div>
           <div class="settings-card" style="margin-bottom: 1rem; border: 1px solid var(--border); border-radius: var(--radius); background: rgba(0, 0, 0, 0.15); overflow: hidden;">
             <button id="toggleSettingsBtn" style="width: 100%; display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.03); border: none; padding: 0.6rem 0.75rem; color: var(--text-main); font-size: 0.85rem; font-weight: 600; cursor: pointer; text-align: left; outline: none; transition: background 0.2s;">
               <span style="display: flex; align-items: center; gap: 0.35rem;">
                 <span>⚙️</span>
-                <span>최신 카드 데이터 동기화</span>
+                <span data-i18n="db.sync">최신 카드 데이터 동기화</span>
                 <span id="dbStatusBadge" style="font-size: 0.7rem; padding: 0.1rem 0.4rem; border-radius: 4px; background: rgba(59,130,246,0.15); color: #60a5fa; font-weight: normal; margin-left: 0.4rem;">내장 DB</span>
               </span>
               <span id="settingsArrow" style="transition: transform 0.2s; font-size: 0.7rem; color: var(--text-muted);">▶</span>
@@ -53,12 +62,12 @@
             <div id="settingsContent" class="hidden" style="padding: 0.75rem; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 0.75rem; background: rgba(0,0,0,0.15);">
               <div style="display: flex; flex-direction: column; gap: 0.4rem;">
                 <div style="display: flex; flex-direction: column; gap: 0.15rem;">
-                  <span style="font-size: 0.85rem; font-weight: 600; color: var(--text-main);">📅 최신 카드 데이터 동기화</span>
-                  <span style="font-size: 0.72rem; color: var(--text-muted);" id="dbStatusText">현재: 내장 데이터 사용 중</span>
+                  <span style="font-size: 0.85rem; font-weight: 600; color: var(--text-main);">📅 <span data-i18n="db.sync">최신 카드 데이터 동기화</span></span>
+                  <span style="font-size: 0.72rem; color: var(--text-muted);" id="dbStatusText" data-i18n="db.currentBuiltIn">현재: 내장 데이터 사용 중</span>
                 </div>
                 <div style="display: flex; gap: 0.5rem; width: 100%;">
-                  <button id="updateDbBtn" class="btn-secondary" style="margin: 0; flex: 1; padding: 0.45rem 0.6rem; font-size: 0.8rem; white-space: nowrap;">최신 데이터 받기</button>
-                  <button id="clearDbBtn" class="btn-secondary" style="margin: 0; flex: 1; padding: 0.45rem 0.6rem; font-size: 0.8rem; background: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.3); color: #f87171; white-space: nowrap;">데이터 삭제</button>
+                  <button id="updateDbBtn" class="btn-secondary" data-i18n="db.download" style="margin: 0; flex: 1; padding: 0.45rem 0.6rem; font-size: 0.8rem; white-space: nowrap;">최신 데이터 받기</button>
+                  <button id="clearDbBtn" class="btn-secondary" data-i18n="db.delete" style="margin: 0; flex: 1; padding: 0.45rem 0.6rem; font-size: 0.8rem; background: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.3); color: #f87171; white-space: nowrap;">데이터 삭제</button>
                 </div>
                 <div id="updateProgressContainer" style="display: none; margin-top: 0.15rem;">
                   <div style="height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; overflow: hidden;">
@@ -75,19 +84,19 @@
           <!-- Attempts Settings Section -->
           <div class="panel-section" style="margin-bottom: 1.25rem;">
             <h3 style="font-size: 0.95rem; margin-bottom: 0.5rem; border-bottom: 1px solid var(--panel-border); padding-bottom: 0.4rem; color: var(--text-main); display: flex; align-items: center; gap: 0.3rem;">
-              <span>🎯</span> <span>남은 횟수 설정 (추천 최적화)</span>
+              <span>🎯</span> <span data-i18n="main.resourcesTitle">남은 횟수 설정 (추천 최적화)</span>
             </h3>
             <div class="direct-hint-grid" style="grid-template-columns: repeat(3, 1fr); gap: 0.4rem;">
               <div class="form-group">
-                <label for="hintsLeft" style="font-size: 0.75rem; margin-bottom: 0.25rem;">남은 힌트</label>
+                <label for="hintsLeft" data-i18n="main.hintsLeft" style="font-size: 0.75rem; margin-bottom: 0.25rem;">남은 힌트</label>
                 <input type="number" id="hintsLeft" value="1" min="0" max="999" step="1" style="padding: 0.4rem 0.6rem; font-size: 0.9rem; border-radius: 8px;">
               </div>
               <div class="form-group">
-                <label for="totalAttemptsLeft" style="font-size: 0.75rem; margin-bottom: 0.25rem;">남은 도전</label>
+                <label for="totalAttemptsLeft" data-i18n="main.attemptsLeft" style="font-size: 0.75rem; margin-bottom: 0.25rem;">남은 도전</label>
                 <input type="number" id="totalAttemptsLeft" value="4" min="0" max="999" step="1" style="padding: 0.4rem 0.6rem; font-size: 0.9rem; border-radius: 8px;">
               </div>
               <div class="form-group">
-                <label for="problemsLeft" style="font-size: 0.75rem; margin-bottom: 0.25rem;">남은 문제</label>
+                <label for="problemsLeft" data-i18n="main.problemsLeft" style="font-size: 0.75rem; margin-bottom: 0.25rem;">남은 문제</label>
                 <input type="number" id="problemsLeft" value="1" min="1" max="999" step="1" style="padding: 0.4rem 0.6rem; font-size: 0.9rem; border-radius: 8px;">
               </div>
             </div>
@@ -96,32 +105,33 @@
           <!-- 1. Direct Hints Section -->
           <div class="panel-section" style="margin-bottom: 1.25rem;">
             <h3 style="font-size: 0.95rem; margin-bottom: 0.5rem; border-bottom: 1px solid var(--panel-border); padding-bottom: 0.4rem; color: var(--text-main); display: flex; align-items: center; gap: 0.3rem;">
-              <span>🔍</span> <span>1. 정답 카드 확실한 정보 입력</span>
+              <span>🔍</span> <span data-i18n="main.directTitle">1. 정답 카드 확실한 정보 입력</span>
             </h3>
-            <p class="hint-desc" style="margin-bottom: 0.75rem;">게임에서 공개된 실제 값을 입력하세요. 프레임은 펜듈럼 포함 여부까지 똑같이 선택하세요.</p>
+            <p class="hint-desc" data-i18n="main.directDesc" style="margin-bottom: 0.75rem;">게임에서 공개된 실제 값을 입력하세요. 프레임은 펜듈럼 포함 여부까지 똑같이 선택하세요.</p>
             <div class="direct-hint-grid" style="grid-template-columns: repeat(2, 1fr); gap: 0.6rem;">
               <div class="form-group">
-                <label for="directFrame" style="font-size: 0.75rem; margin-bottom: 0.2rem;">카드 프레임</label>
+                <label for="directFrame" data-i18n="stats.frameType" style="font-size: 0.75rem; margin-bottom: 0.2rem;">카드 프레임</label>
                 <select id="directFrame" style="padding: 0.5rem 0.7rem; font-size: 0.9rem; border-radius: 8px;">
                   <option value="">선택 안함</option>
                   <option value="normal">일반 몬스터</option>
                   <option value="effect">효과 몬스터</option>
                   <option value="fusion">융합 몬스터</option>
+                  <option value="ritual">의식 몬스터</option>
                   <option value="synchro">싱크로 몬스터</option>
                   <option value="xyz">엑시즈 몬스터</option>
+                  <option value="pendulum">펜듈럼</option>
                   <option value="link">링크 몬스터</option>
-                  <option value="ritual">의식 몬스터</option>
                   <option value="normal_pendulum">일반 / 펜듈럼</option>
                   <option value="effect_pendulum">효과 / 펜듈럼</option>
                   <option value="fusion_pendulum">융합 / 펜듈럼</option>
+                  <option value="ritual_pendulum">의식 / 펜듈럼</option>
                   <option value="synchro_pendulum">싱크로 / 펜듈럼</option>
                   <option value="xyz_pendulum">엑시즈 / 펜듈럼</option>
-                  <option value="ritual_pendulum">의식 / 펜듈럼</option>
                 </select>
               </div>
 
               <div class="form-group">
-                <label for="directAttribute" style="font-size: 0.75rem; margin-bottom: 0.2rem;">속성</label>
+                <label for="directAttribute" data-i18n="stats.attribute" style="font-size: 0.75rem; margin-bottom: 0.2rem;">속성</label>
                 <select id="directAttribute" style="padding: 0.5rem 0.7rem; font-size: 0.9rem; border-radius: 8px;">
                   <option value="">선택 안함</option>
                   <option value="LIGHT">빛 (LIGHT)</option>
@@ -135,21 +145,22 @@
               </div>
               
               <div class="form-group">
-                <label for="directLevel" style="font-size: 0.75rem; margin-bottom: 0.2rem;">레벨/랭크/링크</label>
-                <input type="number" id="directLevel" min="0" max="13" step="1" placeholder="예: 8" style="padding: 0.5rem 0.7rem; font-size: 0.9rem; border-radius: 8px;">
+                <label for="directLevel" data-i18n="stats.level" style="font-size: 0.75rem; margin-bottom: 0.2rem;">레벨/랭크/링크</label>
+                <input type="number" id="directLevel" min="0" max="13" step="1" placeholder="예: 8" data-i18n-placeholder="main.levelPlaceholder" style="padding: 0.5rem 0.7rem; font-size: 0.9rem; border-radius: 8px;">
               </div>
 
               <div class="form-group">
-                <label for="directRace" style="font-size: 0.75rem; margin-bottom: 0.2rem;">종족</label>
+                <label for="directRace" data-i18n="stats.race" style="font-size: 0.75rem; margin-bottom: 0.2rem;">종족</label>
                 <select id="directRace" style="padding: 0.5rem 0.7rem; font-size: 0.9rem; border-radius: 8px; width: 100%;">
                   <option value="">선택 안함</option>
-                  <option value="Dragon">드래곤족</option>
                   <option value="Spellcaster">마법사족</option>
+                  <option value="Dragon">드래곤족</option>
                   <option value="Zombie">언데드족</option>
                   <option value="Warrior">전사족</option>
                   <option value="Beast-Warrior">야수전사족</option>
                   <option value="Beast">야수족</option>
                   <option value="Winged Beast">비행야수족</option>
+                  <option value="Machine">기계족</option>
                   <option value="Fiend">악마족</option>
                   <option value="Fairy">천사족</option>
                   <option value="Insect">곤충족</option>
@@ -162,42 +173,40 @@
                   <option value="Thunder">번개족</option>
                   <option value="Rock">암석족</option>
                   <option value="Plant">식물족</option>
-                  <option value="Machine">기계족</option>
                   <option value="Psychic">사이킥족</option>
                   <option value="Wyrm">환룡족</option>
                   <option value="Cyberse">사이버스족</option>
-                  <option value="Illusion">환상마족</option>
                   <option value="Divine-Beast">환신야수족</option>
-                  <option value="Creator-God">창조신족</option>
+                  <option value="Illusion">환상마족</option>
                 </select>
               </div>
 
               <div class="form-group">
-                <label for="directAtk" style="font-size: 0.75rem; margin-bottom: 0.2rem;">공격력</label>
-                <input type="text" inputmode="text" id="directAtk" placeholder="예: 2500 또는 ?" style="padding: 0.5rem 0.7rem; font-size: 0.9rem; border-radius: 8px;">
+                <label for="directAtk" data-i18n="stats.atk" style="font-size: 0.75rem; margin-bottom: 0.2rem;">공격력</label>
+                <input type="text" inputmode="text" id="directAtk" placeholder="예: 2500 또는 ?" data-i18n-placeholder="main.atkPlaceholder" style="padding: 0.5rem 0.7rem; font-size: 0.9rem; border-radius: 8px;">
               </div>
 
               <div class="form-group">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.2rem;">
-                  <label for="directDef" style="font-size: 0.75rem; margin: 0;">수비력</label>
+                  <label for="directDef" data-i18n="stats.def" style="font-size: 0.75rem; margin: 0;">수비력</label>
                   <label style="font-size: 0.65rem; color: var(--text-muted); display: inline-flex; align-items: center; gap: 0.15rem; cursor: pointer; margin: 0; user-select: none;">
-                    <input type="checkbox" id="directDefNone" style="width: auto; height: auto; margin: 0;"> 없음
+                    <input type="checkbox" id="directDefNone" style="width: auto; height: auto; margin: 0;"> <span data-i18n="common.none">없음</span>
                   </label>
                 </div>
-                <input type="text" inputmode="text" id="directDef" placeholder="예: 2000 또는 ?" style="padding: 0.5rem 0.7rem; font-size: 0.9rem; border-radius: 8px;">
+                <input type="text" inputmode="text" id="directDef" placeholder="예: 2000 또는 ?" data-i18n-placeholder="main.defPlaceholder" style="padding: 0.5rem 0.7rem; font-size: 0.9rem; border-radius: 8px;">
               </div>
             </div>
-            <button id="applyDirectHintBtn" class="btn-primary" style="margin-top: 0.75rem; padding: 0.65rem 1.25rem; font-size: 0.9rem; font-weight: 600;">확실한 정보 적용</button>
+            <button id="applyDirectHintBtn" class="btn-primary" data-i18n="main.applyDirect" style="margin-top: 0.75rem; padding: 0.65rem 1.25rem; font-size: 0.9rem; font-weight: 600;">확실한 정보 적용</button>
           </div>
 
           <!-- 2. Guess Result Section -->
           <div class="panel-section" id="guessResultSection" style="margin-bottom: 1.25rem;">
             <h3 style="font-size: 0.95rem; margin-bottom: 0.5rem; border-bottom: 1px solid var(--panel-border); padding-bottom: 0.4rem; color: var(--text-main); display: flex; align-items: center; gap: 0.3rem;">
-              <span>🧪</span> <span>2. 인게임 도전 결과 (오답 소거)</span>
+              <span>🧪</span> <span data-i18n="main.guessTitle">2. 인게임 도전 결과 (오답 소거)</span>
             </h3>
-            <p class="hint-desc" style="margin-bottom: 0.75rem;">카드를 선택하고 인게임에 표시된 6개 항목의 O/X만 기록하세요.</p>
+            <p class="hint-desc" data-i18n="main.guessDesc" style="margin-bottom: 0.75rem;">카드를 선택하고 인게임에 표시된 6개 항목의 O/X만 기록하세요.</p>
             <div class="search-container">
-              <input type="text" id="cardSearch" placeholder="카드 이름 검색 (한글/영어 가능)..." autocomplete="off" style="padding: 0.65rem 1rem; font-size: 0.95rem; border-radius: 8px;">
+              <input type="text" id="cardSearch" placeholder="카드 이름 검색 (한글/영어 가능)..." data-i18n-placeholder="main.searchPlaceholder" autocomplete="off" style="padding: 0.65rem 1rem; font-size: 0.95rem; border-radius: 8px;">
               <div id="searchDropdown" class="dropdown hidden"></div>
             </div>
             
@@ -213,60 +222,60 @@
               <div style="height: 1px; background: var(--border); margin: 0.5rem 0;"></div>
 
               <h4 style="font-size: 0.8rem; color: var(--accent-gold); margin-bottom: 0.4rem; display: flex; align-items: center; gap: 0.25rem;">
-                <span>📊</span> <span>판정 결과 O/X 체크</span> <span id="judgmentProgress" class="badge" aria-live="polite">0 / 6</span>
+                <span>📊</span> <span data-i18n="main.judgmentTitle">판정 결과 O/X 체크</span> <span id="judgmentProgress" class="badge" aria-live="polite">0 / 6</span>
               </h4>
               <div class="status-toggles" style="gap: 0.4rem; margin-top: 0;">
                 <!-- frameType -->
                 <div class="status-row" data-stat="frameType" style="padding: 0.5rem 0.75rem;">
-                  <span style="font-size: 0.85rem; font-weight: 600;">카드 프레임</span>
+                  <span data-i18n="stats.frameType" style="font-size: 0.85rem; font-weight: 600;">카드 프레임</span>
                   <div class="toggle-group">
-                    <button class="btn-toggle btn-correct" data-val="correct" style="padding: 0.45rem 0.75rem; font-size: 0.85rem; border-radius: 8px; font-weight: bold; min-width: 72px;">O (맞음)</button>
-                    <button class="btn-toggle btn-wrong" data-val="wrong" style="padding: 0.45rem 0.75rem; font-size: 0.85rem; border-radius: 8px; font-weight: bold; min-width: 72px;">X (틀림)</button>
+                    <button class="btn-toggle btn-correct" data-val="correct" data-i18n="main.correct" style="padding: 0.45rem 0.75rem; font-size: 0.85rem; border-radius: 8px; font-weight: bold; min-width: 72px;">O (맞음)</button>
+                    <button class="btn-toggle btn-wrong" data-val="wrong" data-i18n="main.wrong" style="padding: 0.45rem 0.75rem; font-size: 0.85rem; border-radius: 8px; font-weight: bold; min-width: 72px;">X (틀림)</button>
                   </div>
                 </div>
                 <!-- attribute -->
                 <div class="status-row" data-stat="attribute" style="padding: 0.5rem 0.75rem;">
-                  <span style="font-size: 0.85rem; font-weight: 600;">속성</span>
+                  <span data-i18n="stats.attribute" style="font-size: 0.85rem; font-weight: 600;">속성</span>
                   <div class="toggle-group">
-                    <button class="btn-toggle btn-correct" data-val="correct" style="padding: 0.45rem 0.75rem; font-size: 0.85rem; border-radius: 8px; font-weight: bold; min-width: 72px;">O (맞음)</button>
-                    <button class="btn-toggle btn-wrong" data-val="wrong" style="padding: 0.45rem 0.75rem; font-size: 0.85rem; border-radius: 8px; font-weight: bold; min-width: 72px;">X (틀림)</button>
+                    <button class="btn-toggle btn-correct" data-val="correct" data-i18n="main.correct" style="padding: 0.45rem 0.75rem; font-size: 0.85rem; border-radius: 8px; font-weight: bold; min-width: 72px;">O (맞음)</button>
+                    <button class="btn-toggle btn-wrong" data-val="wrong" data-i18n="main.wrong" style="padding: 0.45rem 0.75rem; font-size: 0.85rem; border-radius: 8px; font-weight: bold; min-width: 72px;">X (틀림)</button>
                   </div>
                 </div>
                 <!-- level -->
                 <div class="status-row" data-stat="level" style="padding: 0.5rem 0.75rem;">
-                  <span style="font-size: 0.85rem; font-weight: 600;">레벨/랭크/링크</span>
+                  <span data-i18n="stats.level" style="font-size: 0.85rem; font-weight: 600;">레벨/랭크/링크</span>
                   <div class="toggle-group">
-                    <button class="btn-toggle btn-correct" data-val="correct" style="padding: 0.45rem 0.75rem; font-size: 0.85rem; border-radius: 8px; font-weight: bold; min-width: 72px;">O (맞음)</button>
-                    <button class="btn-toggle btn-wrong" data-val="wrong" style="padding: 0.45rem 0.75rem; font-size: 0.85rem; border-radius: 8px; font-weight: bold; min-width: 72px;">X (틀림)</button>
+                    <button class="btn-toggle btn-correct" data-val="correct" data-i18n="main.correct" style="padding: 0.45rem 0.75rem; font-size: 0.85rem; border-radius: 8px; font-weight: bold; min-width: 72px;">O (맞음)</button>
+                    <button class="btn-toggle btn-wrong" data-val="wrong" data-i18n="main.wrong" style="padding: 0.45rem 0.75rem; font-size: 0.85rem; border-radius: 8px; font-weight: bold; min-width: 72px;">X (틀림)</button>
                   </div>
                 </div>
                 <!-- race -->
                 <div class="status-row" data-stat="race" style="padding: 0.5rem 0.75rem;">
-                  <span style="font-size: 0.85rem; font-weight: 600;">종족</span>
+                  <span data-i18n="stats.race" style="font-size: 0.85rem; font-weight: 600;">종족</span>
                   <div class="toggle-group">
-                    <button class="btn-toggle btn-correct" data-val="correct" style="padding: 0.45rem 0.75rem; font-size: 0.85rem; border-radius: 8px; font-weight: bold; min-width: 72px;">O (맞음)</button>
-                    <button class="btn-toggle btn-wrong" data-val="wrong" style="padding: 0.45rem 0.75rem; font-size: 0.85rem; border-radius: 8px; font-weight: bold; min-width: 72px;">X (틀림)</button>
+                    <button class="btn-toggle btn-correct" data-val="correct" data-i18n="main.correct" style="padding: 0.45rem 0.75rem; font-size: 0.85rem; border-radius: 8px; font-weight: bold; min-width: 72px;">O (맞음)</button>
+                    <button class="btn-toggle btn-wrong" data-val="wrong" data-i18n="main.wrong" style="padding: 0.45rem 0.75rem; font-size: 0.85rem; border-radius: 8px; font-weight: bold; min-width: 72px;">X (틀림)</button>
                   </div>
                 </div>
                 <!-- atk -->
                 <div class="status-row" data-stat="atk" style="padding: 0.5rem 0.75rem;">
-                  <span style="font-size: 0.85rem; font-weight: 600;">공격력</span>
+                  <span data-i18n="stats.atk" style="font-size: 0.85rem; font-weight: 600;">공격력</span>
                   <div class="toggle-group">
-                    <button class="btn-toggle btn-correct" data-val="correct" style="padding: 0.45rem 0.75rem; font-size: 0.85rem; border-radius: 8px; font-weight: bold; min-width: 72px;">O (맞음)</button>
-                    <button class="btn-toggle btn-wrong" data-val="wrong" style="padding: 0.45rem 0.75rem; font-size: 0.85rem; border-radius: 8px; font-weight: bold; min-width: 72px;">X (틀림)</button>
+                    <button class="btn-toggle btn-correct" data-val="correct" data-i18n="main.correct" style="padding: 0.45rem 0.75rem; font-size: 0.85rem; border-radius: 8px; font-weight: bold; min-width: 72px;">O (맞음)</button>
+                    <button class="btn-toggle btn-wrong" data-val="wrong" data-i18n="main.wrong" style="padding: 0.45rem 0.75rem; font-size: 0.85rem; border-radius: 8px; font-weight: bold; min-width: 72px;">X (틀림)</button>
                   </div>
                 </div>
                 <!-- def -->
                 <div class="status-row" data-stat="def" style="padding: 0.5rem 0.75rem;">
-                  <span style="font-size: 0.85rem; font-weight: 600;">수비력</span>
+                  <span data-i18n="stats.def" style="font-size: 0.85rem; font-weight: 600;">수비력</span>
                   <div class="toggle-group">
-                    <button class="btn-toggle btn-correct" data-val="correct" style="padding: 0.45rem 0.75rem; font-size: 0.85rem; border-radius: 8px; font-weight: bold; min-width: 72px;">O (맞음)</button>
-                    <button class="btn-toggle btn-wrong" data-val="wrong" style="padding: 0.45rem 0.75rem; font-size: 0.85rem; border-radius: 8px; font-weight: bold; min-width: 72px;">X (틀림)</button>
+                    <button class="btn-toggle btn-correct" data-val="correct" data-i18n="main.correct" style="padding: 0.45rem 0.75rem; font-size: 0.85rem; border-radius: 8px; font-weight: bold; min-width: 72px;">O (맞음)</button>
+                    <button class="btn-toggle btn-wrong" data-val="wrong" data-i18n="main.wrong" style="padding: 0.45rem 0.75rem; font-size: 0.85rem; border-radius: 8px; font-weight: bold; min-width: 72px;">X (틀림)</button>
                   </div>
                 </div>
               </div>
               
-              <button id="applyGuessBtn" class="btn-primary" disabled style="margin-top: 0.75rem; padding: 0.65rem 1.25rem; font-size: 0.9rem; font-weight: 600; width: 100%;">소거 알고리즘 반영</button>
+              <button id="applyGuessBtn" class="btn-primary" data-i18n="main.applyGuess" disabled style="margin-top: 0.75rem; padding: 0.65rem 1.25rem; font-size: 0.9rem; font-weight: 600; width: 100%;">소거 알고리즘 반영</button>
             </div>
           </div>
 
@@ -275,7 +284,7 @@
           <!-- Applied Hints Card (Scrollable) -->
           <div class="panel-section applied-hints-container hidden" id="appliedHintsContainer" style="margin-top: 0.75rem; background: rgba(0, 0, 0, 0.1); border: 1px solid var(--border); padding: 0.75rem; border-radius: var(--radius); margin-bottom: 0;">
             <h2 style="font-size: 0.9rem; margin-bottom: 0.5rem; border: none; padding: 0; color: var(--text-main); display: flex; align-items: center; gap: 0.25rem;">
-              <span>📜</span> <span>적용된 단서 목록</span>
+              <span>📜</span> <span data-i18n="main.appliedHints">적용된 단서 목록</span>
             </h2>
             <div style="max-height: 150px; overflow-y: auto; padding-right: 0.25rem;" class="custom-scroll">
               <ul id="appliedHintsList" class="hints-list" style="margin: 0;"></ul>
@@ -287,8 +296,8 @@
         <section class="panel results-panel">
           <div class="results-header">
             <div>
-              <h2>가능성 있는 정답 후보</h2>
-              <p id="databaseScopeText" style="font-size: 0.8rem; color: var(--text-muted); margin-top:0.2rem;">검증된 Master Duel 데이터와 입력한 단서를 기준으로 계산합니다.</p>
+              <h2 data-i18n="main.resultsTitle">가능성 있는 정답 후보</h2>
+              <p id="databaseScopeText" data-i18n="main.scopeInitial" style="font-size: 0.8rem; color: var(--text-muted); margin-top:0.2rem;">검증된 Master Duel 데이터와 입력한 단서를 기준으로 계산합니다.</p>
             </div>
             <span class="badge" id="candidatesCount" role="status" aria-live="polite">로딩 중...</span>
           </div>
@@ -296,10 +305,10 @@
           <div class="recommendations panel-section mt-4" id="recommendationsSection">
             <div class="rec-header-row" style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1rem;">
               <div style="display: flex; flex-direction: column; gap: 0.25rem;">
-                <h3 style="margin: 0; font-size: 1.15rem; display: flex; align-items: center; gap: 0.4rem; white-space: nowrap; border-bottom: none; padding-bottom: 0;">💡 추천 픽 및 전략</h3>
-                <p class="rec-desc" style="margin: 0; color: var(--text-muted); font-size: 0.85rem;">다양한 게임 상황에 맞춤화된 추천 판단 방식을 제공합니다.</p>
+                <h3 data-i18n="main.recommendTitle" style="margin: 0; font-size: 1.15rem; display: flex; align-items: center; gap: 0.4rem; white-space: nowrap; border-bottom: none; padding-bottom: 0;">💡 추천 픽 및 전략</h3>
+                <p class="rec-desc" data-i18n="main.recommendDesc" style="margin: 0; color: var(--text-muted); font-size: 0.85rem;">다양한 게임 상황에 맞춤화된 추천 판단 방식을 제공합니다.</p>
               </div>
-              <button id="calcRecBtn" class="btn-calc rec-calc-btn">최적의 카드 계산</button>
+              <button id="calcRecBtn" class="btn-calc rec-calc-btn" data-i18n="main.calculate">최적의 카드 계산</button>
             </div>
             
             <div id="strategyMsg" style="margin-bottom: 1rem;">
@@ -313,13 +322,13 @@
             </div>
 
             <div class="form-group mt-4" style="margin-bottom: 1rem;">
-              <label style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem; display: block;">추천 최적화 기준 (Judgment Logics)</label>
+              <label data-i18n="main.criteriaTitle" style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem; display: block;">추천 최적화 기준 (Judgment Logics)</label>
               <div class="toggle-group rec-criteria-group" id="recCriteriaGroup" style="margin-bottom: 0.5rem;">
-                <button class="btn-toggle active" data-criteria="entropy" style="font-size: 0.75rem; padding: 0.5rem 0.25rem;">기대 정보량 (Entropy)</button>
-                <button class="btn-toggle" data-criteria="minimax" style="font-size: 0.75rem; padding: 0.5rem 0.25rem;">최악 상황 최소화 (Minimax)</button>
-                <button class="btn-toggle" data-criteria="oneShot" style="font-size: 0.75rem; padding: 0.5rem 0.25rem;">즉시 정답 확률</button>
-                <button class="btn-toggle" data-criteria="twoShot" disabled title="후보 60장 이하에서 계산합니다." style="font-size: 0.75rem; padding: 0.5rem 0.25rem;">2회 내 성공 확률</button>
-                <button class="btn-toggle" data-criteria="expected" style="font-size: 0.75rem; padding: 0.5rem 0.25rem;">평균 잔여 최소 (Average)</button>
+                <button class="btn-toggle active" data-criteria="entropy" data-i18n="criteria.entropy" style="font-size: 0.75rem; padding: 0.5rem 0.25rem;">기대 정보량 (Entropy)</button>
+                <button class="btn-toggle" data-criteria="minimax" data-i18n="criteria.minimax" style="font-size: 0.75rem; padding: 0.5rem 0.25rem;">최악 상황 최소화 (Minimax)</button>
+                <button class="btn-toggle" data-criteria="oneShot" data-i18n="criteria.oneShot" style="font-size: 0.75rem; padding: 0.5rem 0.25rem;">즉시 정답 확률</button>
+                <button class="btn-toggle" data-criteria="twoShot" data-i18n="criteria.twoShot" disabled title="후보 60장 이하에서 계산합니다." style="font-size: 0.75rem; padding: 0.5rem 0.25rem;">2회 내 성공 확률</button>
+                <button class="btn-toggle" data-criteria="expected" data-i18n="criteria.expected" style="font-size: 0.75rem; padding: 0.5rem 0.25rem;">평균 잔여 최소 (Average)</button>
               </div>
               <div id="criteriaDesc" style="font-size: 0.8rem; color: var(--text-muted); background: rgba(0,0,0,0.25); padding: 0.5rem 0.75rem; border-radius: 6px; border-left: 3px solid var(--accent-blue); line-height: 1.4;">
                 <strong>기대 정보량 (Entropy):</strong> 전체 후보군을 가장 고르게 여러 판정 그룹으로 나누는 표준 알고리즘입니다. 실제 공개 값을 반영하며 최단 해결 횟수를 보장하지는 않습니다.
@@ -327,30 +336,30 @@
             </div>
             
             <div id="recContainer" class="hidden mt-4">
-              <h4 id="snipeHeader" style="color: var(--accent-gold); margin-bottom: 0.5rem; display: inline-block;">🎯 정답이 인정될 수 있는 카드</h4>
-              <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1rem;">이번 제출로 정답이 인정될 가능성이 있는 카드입니다. 남은 도전 횟수가 적을 때 적극적으로 시도하세요.</p>
+              <h4 id="snipeHeader" data-i18n="main.snipeTitle" style="color: var(--accent-gold); margin-bottom: 0.5rem; display: inline-block;">🎯 정답이 인정될 수 있는 카드</h4>
+              <p data-i18n="main.snipeDesc" style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1rem;">이번 제출로 정답이 인정될 가능성이 있는 카드입니다. 남은 도전 횟수가 적을 때 적극적으로 시도하세요.</p>
               <div id="snipeList" class="card-grid recommendation-grid"></div>
               
-              <h4 id="scoutHeader" style="color: #a855f7; margin-top: 1.5rem; margin-bottom: 0.5rem; display: inline-block;">🕵️ 정보 수집용 카드 (즉시 정답 확률 0%)</h4>
-              <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1rem;">정답은 아니지만, 현재 후보들의 경우의 수를 가장 효율적으로 좁히는 정보원 카드입니다. 남은 기회가 넉넉할 때 좋습니다.</p>
+              <h4 id="scoutHeader" data-i18n="main.scoutTitle" style="color: #a855f7; margin-top: 1.5rem; margin-bottom: 0.5rem; display: inline-block;">🕵️ 정보 수집용 카드 (즉시 정답 확률 0%)</h4>
+              <p data-i18n="main.scoutDesc" style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1rem;">정답은 아니지만, 현재 후보들의 경우의 수를 가장 효율적으로 좁히는 정보원 카드입니다. 남은 기회가 넉넉할 때 좋습니다.</p>
               <div id="scoutList" class="card-grid recommendation-grid"></div>
             </div>
           </div>
 
           <div class="candidate-list-container panel-section mt-4">
-            <h3>정답 후보 리스트 (<span id="visibleCandidatesCount">0</span>장 표시)</h3>
-            <label for="candidateSearch">남은 후보에서 검색</label>
-            <input id="candidateSearch" type="search" placeholder="한글·영어 카드 이름" autocomplete="off">
+            <h3><span data-i18n="main.candidateTitle">정답 후보 리스트</span> (<span id="visibleCandidatesCount">0장 표시</span>)</h3>
+            <label for="candidateSearch" data-i18n="main.searchRemaining">남은 후보에서 검색</label>
+            <input id="candidateSearch" type="search" placeholder="한글·영어 카드 이름" data-i18n-placeholder="main.candidateSearchPlaceholder" autocomplete="off">
             <p id="candidateNotice" role="alert" hidden></p>
             <div id="candidateList" class="card-grid"></div>
-            <button id="showMoreCandidates" class="btn-secondary" hidden>후보 48장 더 보기</button>
+            <button id="showMoreCandidates" class="btn-secondary" data-i18n="main.showMore" hidden>후보 48장 더 보기</button>
           </div>
         </section>
       </main>
       <footer class="app-footer" style="margin-top: 3rem; padding: 2rem 1rem; border-top: 1px solid var(--border); text-align: center; font-size: 0.85rem; color: var(--text-light); line-height: 1.6;">
-        <p>본 서비스는 개인적인 학습 및 연구 목적으로 개발되었으며, AI(Antigravity)를 활용하여 제작되었습니다.</p>
-        <p>Master Duel 카드 정보와 <a href="https://ygoprodeck.com/api-guide/" target="_blank" rel="noopener noreferrer" style="color: var(--accent-blue); text-decoration: underline;">YGOPRODeck 이미지 API</a>를 사용하고 있습니다.</p>
-        <p style="margin-top: 0.5rem;">GitHub 저장소: <a href="https://github.com/haha5039/md-decoder" target="_blank" style="color: var(--accent-gold); text-decoration: underline; font-weight: bold;">github.com/haha5039/md-decoder</a></p>
+        <p data-i18n="footer.purpose">본 서비스는 개인적인 학습 및 연구 목적으로 개발되었으며, AI(Antigravity)를 활용하여 제작되었습니다.</p>
+        <p><span data-i18n="footer.data">Master Duel 카드 정보와</span> <a href="https://ygoprodeck.com/api-guide/" target="_blank" rel="noopener noreferrer" data-i18n="footer.dataLink" style="color: var(--accent-blue); text-decoration: underline;">YGOPRODeck 이미지 API</a><span data-i18n="footer.dataSuffix">를 사용하고 있습니다.</span></p>
+        <p style="margin-top: 0.5rem;"><span data-i18n="footer.repo">GitHub 저장소:</span> <a href="https://github.com/haha5039/md-decoder" target="_blank" style="color: var(--accent-gold); text-decoration: underline; font-weight: bold;">github.com/haha5039/md-decoder</a></p>
       </footer>
     </div>
     <script type="module" src="/src/main.js"></script>

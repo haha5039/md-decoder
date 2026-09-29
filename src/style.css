@@ -605,6 +605,31 @@ a {
   gap: 0.25rem;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.locale-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.locale-picker select {
+  width: auto;
+  min-width: 92px;
+  padding: 0.45rem 0.65rem;
+  border-radius: 20px;
+  font-size: 0.8rem;
+}
+
 .nav-tab {
   display: flex;
   align-items: center;
@@ -731,6 +756,11 @@ a {
     justify-content: center !important;
     margin-bottom: 1rem !important;
     text-align: center !important;
+  }
+
+  .header-actions {
+    width: 100%;
+    justify-content: center;
   }
   .header-logo {
     justify-content: center !important;

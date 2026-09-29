@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { isCardDecoderEligible, mergeMasterDuelCards, normalizeCards, validateCards } from '../src/data.js';
-import { applyAutomaticMatches, budget, createBatchId, nextChallenge, parseStatInput, removeInputBatch, restoreSession, saveSession, hasSolvedGuess } from '../src/session.js';
+import { applyAutomaticMatches, budget, consumeAttempt, createBatchId, nextChallenge, parseStatInput, removeInputBatch, restoreSession, saveSession, hasSolvedGuess } from '../src/session.js';
 import { escapeHTML } from '../src/utils.js';
+import { ATTRIBUTE_ORDER, FRAME_ORDER, RACE_ORDER, localizeCardName, setLocale, t } from '../src/i18n.js';
 
 const api = { id: 1, name: 'Card', type: 'Effect Monster', frameType: 'effect', attribute: 'DARK', level: 0, race: 'Dragon', atk: -1, def: 0 };
 
@@ -141,6 +142,11 @@ test('recording free revelations never consumes or refunds paid hints', () => {
   assert.equal(budget(10000), 999);
 });
 
+test('guess results remain recordable when no attempts are left', () => {
+  assert.deepEqual(consumeAttempt(4), { remaining: 3, cost: 1 });
+  assert.deepEqual(consumeAttempt(0), { remaining: 0, cost: 0 });
+});
+
 test('batch IDs work without secure-context browser APIs', () => {
   const first = createBatchId('direct');
   const second = createBatchId('direct');
@@ -199,4 +205,23 @@ test('matching frame and level are applied automatically', () => {
   const completed = applyAutomaticMatches(batch, [card]);
   assert.ok(completed.some(hint => hint.supplemental && hint.stat === 'frameType' && hint.value === 'effect'));
   assert.ok(completed.some(hint => hint.supplemental && hint.stat === 'level' && hint.value === 2));
+});
+
+test('filter options follow the requested in-game order', () => {
+  assert.deepEqual(FRAME_ORDER, ['normal', 'effect', 'fusion', 'ritual', 'synchro', 'xyz', 'pendulum', 'link',
+    'normal_pendulum', 'effect_pendulum', 'fusion_pendulum', 'ritual_pendulum', 'synchro_pendulum', 'xyz_pendulum']);
+  assert.deepEqual(ATTRIBUTE_ORDER, ['LIGHT', 'DARK', 'WATER', 'FIRE', 'EARTH', 'WIND', 'DIVINE']);
+  assert.deepEqual(RACE_ORDER, ['Spellcaster', 'Dragon', 'Zombie', 'Warrior', 'Beast-Warrior', 'Beast', 'Winged Beast', 'Machine',
+    'Fiend', 'Fairy', 'Insect', 'Dinosaur', 'Reptile', 'Fish', 'Sea Serpent', 'Aqua', 'Pyro', 'Thunder', 'Rock', 'Plant',
+    'Psychic', 'Wyrm', 'Cyberse', 'Divine-Beast', 'Illusion']);
+});
+
+test('Korean and English labels and card names are available', () => {
+  const bilingualCard = { name: '검투수 다레이오스', nameEn: 'Gladiator Beast Dareios' };
+  setLocale('en');
+  assert.equal(t('stats.attribute'), 'Attribute');
+  assert.equal(localizeCardName(bilingualCard), 'Gladiator Beast Dareios');
+  setLocale('ko');
+  assert.equal(t('stats.attribute'), '속성');
+  assert.equal(localizeCardName(bilingualCard), '검투수 다레이오스');
 });

@@ -7,7 +7,7 @@ self.onmessage = ({ data }) => {
       solve = createSolver(data.cards);
       return;
     }
-    if (!solve) throw new Error('카드 데이터가 준비되지 않았습니다.');
+    if (!solve) throw new Error('SOLVER_NOT_READY');
     const result = solve(data.request);
     self.postMessage({ id: data.id, result: {
       ...result,
