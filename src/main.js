@@ -2,6 +2,7 @@ import './style.css'
 import { allCards as rawCards, dataGeneratedAt } from './cards_data.js'
 import { getValidLevels, renderCardStatsHTML, translateAttribute, translateFrame, translateRace, getTargetRulesLevel, filterCandidatesByHints, escapeHTML, formatStat } from './utils.js'
 import { ATTRIBUTE_ORDER, FRAME_ORDER, RACE_ORDER, alternateCardName, getLocale, initializeI18n, localizeCardName, populateLocalizedSelect, t } from './i18n.js';
+import { initializeTheme } from './theme.js';
 
 import { allocateAttempts, sortScores, distinctScores, TWO_TURN_LIMIT, chooseCriteria, recommendHintUse } from './solver.js';
 import { fetchCardManifest } from './data.js';
@@ -12,13 +13,7 @@ import { getCachedCards, saveCachedCards, clearCachedCards } from './db.js'
 let allCards = [];
 
 const initialStrategyHTML = () => `
-  <div style="background: rgba(59, 130, 246, 0.05); border: 1px dashed rgba(59, 130, 246, 0.3); padding: 1rem; border-radius: 8px; font-size: 0.85rem; line-height: 1.5; color: var(--text-muted); display: flex; align-items: center; gap: 0.75rem;">
-    <span style="font-size: 1.5rem; flex-shrink: 0;">⚡</span>
-    <div>
-      <strong style="color: #60a5fa; display: block; margin-bottom: 0.2rem;">${t('dynamic.readyTitle')}</strong>
-      ${t('dynamic.readyBody')}
-    </div>
-  </div>
+  <p class="strategy-summary">${t('dynamic.readyBody')}</p>
 `;
 
 // State
@@ -73,6 +68,7 @@ const directDefNone = document.getElementById('directDefNone');
 const applyDirectHintBtn = document.getElementById('applyDirectHintBtn');
 
 initializeI18n(() => window.location.reload());
+initializeTheme();
 populateLocalizedSelect(directFrame, FRAME_ORDER, 'frames');
 populateLocalizedSelect(directAttribute, ATTRIBUTE_ORDER, 'attributes');
 populateLocalizedSelect(directRace, RACE_ORDER, 'races');
@@ -658,9 +654,9 @@ function sortRecommendations(list, criteria) { return sortScores(list, criteria)
 function getRecommendationLimit(container) {
   const width = container.clientWidth || container.parentElement?.clientWidth || 0;
   if (!width) return 1;
-  const minimumCardWidth = 112;
+  const minimumCardWidth = 140;
   const gap = 12;
-  return Math.max(1, Math.min(6, Math.floor((width + gap) / (minimumCardWidth + gap))));
+  return Math.max(1, Math.min(5, Math.floor((width + gap) / (minimumCardWidth + gap))));
 }
 
 function renderRecommendationList(list, container) {
@@ -674,76 +670,25 @@ function renderRecommendationList(list, container) {
     const imgUrl = escapeHTML(card.image_url || '');
     const displayName = localizeCardName(card);
 
-    const levelLabel = card.frameType === 'link' ? 'Lnk' : (card.frameType.startsWith('xyz') ? 'Rk' : 'Lv');
-    const lvText = getTargetRulesLevel(card) != null ? `${levelLabel}.${getTargetRulesLevel(card)}` : '';
-    const attrText = translateAttribute(card.attribute) || '';
-    const atkText = formatStat(card.atk);
-    const defText = formatStat(card.def);
-    
     const entropyText = `${t('dynamic.info')}: ${item.entropy.toFixed(2)} Bits`;
     const expectedText = `${t('dynamic.average')}: ${t('common.cardCount', { count: item.expectedRemaining.toFixed(1) })}`;
     const minimaxText = `${t('dynamic.worst')}: ${t('common.cardCount', { count: item.minimax })}`;
     const oneShotText = `${t('dynamic.immediateWin')}: ${(item.oneShotProb * 100).toFixed(2)}%`;
-    const riskText = item.eliminationProb > 0 ? `${t('dynamic.exceptionRisk')}: ${(item.eliminationProb * 100).toFixed(2)}%` : '';
-    
-    let detailHtml = '';
-    if (activeCriteria === 'entropy') {
-      detailHtml = `
-        <div class="card-item-info" style="font-weight:bold; color:var(--accent-gold); margin-bottom: 0.15rem; font-size: 0.72rem;">${entropyText}</div>
-        <div class="card-item-stats" style="font-size: 0.68rem; color: var(--text-muted); display: flex; flex-direction: column; gap: 0.05rem;">
-          <span>${expectedText}</span>
-          <span>${minimaxText}</span>
-        </div>`;
-    } else if (activeCriteria === 'minimax') {
-      detailHtml = `
-        <div class="card-item-info" style="font-weight:bold; color:#f87171; margin-bottom: 0.15rem; font-size: 0.72rem;">${minimaxText}</div>
-        <div class="card-item-stats" style="font-size: 0.68rem; color: var(--text-muted); display: flex; flex-direction: column; gap: 0.05rem;">
-          <span>${entropyText}</span>
-          <span>${oneShotText}</span>
-        </div>`;
-    } else if (activeCriteria === 'oneShot') {
-      detailHtml = `
-        <div class="card-item-info" style="font-weight:bold; color:#4ade80; margin-bottom: 0.15rem; font-size: 0.72rem;">${oneShotText}</div>
-        <div class="card-item-stats" style="font-size: 0.68rem; color: var(--text-muted); display: flex; flex-direction: column; gap: 0.05rem;">
-          <span>${entropyText}</span>
-          <span>${expectedText}</span>
-        </div>`;
-    } else if (activeCriteria === 'twoShot') {
-      detailHtml = `
-        <div class="card-item-info" style="font-weight:bold; color:#4ade80; margin-bottom: 0.15rem; font-size: 0.72rem;">${t('dynamic.twoWin')} ${(item.twoShotProb * 100).toFixed(2)}%</div>
-        <div class="card-item-stats" style="font-size: 0.68rem; color: var(--text-muted); display: flex; flex-direction: column; gap: 0.05rem;">
-          <span>${oneShotText}</span>
-          <span>${expectedText}</span>
-        </div>`;
-    } else if (activeCriteria === 'expected') {
-      detailHtml = `
-        <div class="card-item-info" style="font-weight:bold; color:#60a5fa; margin-bottom: 0.15rem; font-size: 0.72rem;">${expectedText}</div>
-        <div class="card-item-stats" style="font-size: 0.68rem; color: var(--text-muted); display: flex; flex-direction: column; gap: 0.05rem;">
-          <span>${entropyText}</span>
-          <span>${minimaxText}</span>
-        </div>`;
-    }
+    const twoShotText = item.twoShotProb === null ? '' : `${t('dynamic.twoWin')}: ${(item.twoShotProb * 100).toFixed(2)}%`;
+    const primaryText = activeCriteria === 'entropy' ? entropyText
+      : activeCriteria === 'minimax' ? minimaxText
+        : activeCriteria === 'oneShot' ? oneShotText
+          : activeCriteria === 'twoShot' ? twoShotText : expectedText;
+    const secondaryText = activeCriteria === 'oneShot'
+      ? expectedText
+      : item.oneShotProb > 0 ? oneShotText : '';
     
     div.innerHTML = `
       <img src="${imgUrl}" alt="${escapeHTML(displayName)}" loading="lazy" onerror="this.onerror=null;this.style.visibility='hidden'">
       <div class="card-item-title" title="${escapeHTML(displayName)}">${escapeHTML(displayName)}</div>
       ${item.equivalentChoices > 1 ? `<div class="card-item-stats">${t('dynamic.equivalent', { count: item.equivalentChoices })}</div>` : ''}
-      ${detailHtml}
-      ${riskText ? `<div class="card-item-info" style="color:#fbbf24;">${riskText}</div>` : ''}
-      ${['oneShot', 'twoShot'].includes(activeCriteria) ? '' : `<div class="card-item-info">${oneShotText}${item.twoShotProb === null ? '' : ` · ${t('dynamic.twoWin')} ${(item.twoShotProb * 100).toFixed(2)}%`}</div>`}
-      <div class="candidate-stats" style="border-top: 1px dashed rgba(255,255,255,0.08); padding-top: 0.25rem; margin-top: 0.25rem;">
-        <div class="candidate-stats-row">
-          <span class="stat-badge frame-${card.frameType.toLowerCase().replace('_pendulum', '')}" style="font-size: 0.65rem; padding: 0.1rem 0.35rem;">${escapeHTML(translateFrame(card.frameType))}</span>
-        </div>
-        <div class="candidate-stats-row">
-          ${attrText ? `<span class="stat-badge attr" style="font-size: 0.65rem; padding: 0.1rem 0.35rem;">${escapeHTML(attrText)}</span>` : ''}
-          ${lvText ? `<span class="stat-badge level" style="font-size: 0.65rem; padding: 0.1rem 0.35rem;">${lvText}</span>` : ''}
-        </div>
-        <div class="candidate-stats-row">
-          <span class="stat-badge race" style="font-size: 0.65rem; padding: 0.1rem 0.35rem;">${escapeHTML(translateRace(card.race) || '-')}</span>
-        </div>
-        <div class="candidate-stats-atkdef">⚔️ ${atkText} / 🛡️ ${defText}</div>
-      </div>
+      <div class="recommendation-primary">${primaryText}</div>
+      ${secondaryText && secondaryText !== primaryText ? `<div class="recommendation-secondary">${secondaryText}</div>` : ''}
     `;
     div.onclick = () => selectCard(card);
     container.appendChild(div);
@@ -864,43 +809,40 @@ function updateHintStrategy(autoSelect = false) {
     return;
   }
   if (!candidates.length) messages.push(t('dynamic.noCandidates'));
-  else if (!currentBudget) messages.push(t('dynamic.zeroAttempts'));
   else if (candidates.length === 1) messages.push(t('dynamic.oneCandidate', { card: escapeHTML(localizeCardName(candidates[0])) }));
-  else if (currentBudget === 1) messages.push(t('dynamic.lastAttempt'));
-  else if (currentBudget <= 4 && calculatedResults?.twoTurnExact) messages.push(t('dynamic.twoShotGuide'));
-  else messages.push(t('dynamic.generalGuide'));
-  if (calculatedResults) {
+  else if (!calculatedResults) messages.push(t('dynamic.calculatePrompt', { count: candidates.length }));
+  else {
     const best = sortScores([...calculatedResults.snipes, ...calculatedResults.scouts], activeCriteria)[0];
-    if (best) messages.push(t('dynamic.recommendation', {
+    if (best) messages.push(t(best.twoShotProb === null ? 'dynamic.bestOneShotCompact' : 'dynamic.bestCompact', {
       card: `<strong>${escapeHTML(localizeCardName(best.card))}</strong>`,
       oneShot: `${(best.oneShotProb * 100).toFixed(2)}%`,
-      twoShot: best.twoShotProb === null ? '' : ` · ${t('dynamic.twoWin')} ${(best.twoShotProb * 100).toFixed(2)}%`
+      twoShot: `${((best.twoShotProb ?? 0) * 100).toFixed(2)}%`
     }));
-    // Hint value is measured for the current candidate state. Do not divide
-    // hints or attempts mechanically by the number of future challenges.
+    // Hint value is measured for the current candidate state. Future challenge
+    // count raises the scarcity threshold; it never assigns one hint per problem.
     const hintAdvice = recommendHintUse({
       attempts,
       remainingHints,
+      problemsLeft: problems,
       candidateCount: candidates.length,
       hint: calculatedResults.hint,
       bestGuessExpectedRemaining: calculatedResults.bestGuessExpectedRemaining
     });
     if (calculatedResults.hint && remainingHints) {
-      const expected = calculatedResults.hint.expectedRemaining.toFixed(1);
-      const reduction = (hintAdvice.reductionRate * 100).toFixed(1);
-      const winGain = (hintAdvice.oneShotGain * 100).toFixed(2);
-      if (hintAdvice.decision === 'use') {
-        messages.push(`<strong>${t('dynamic.hintUse', {
-          timing: t(attempts === 0 ? 'dynamic.beforeNextAttempt' : 'dynamic.beforeGuess'), expected, reduction, gain: winGain
-        })}</strong>`);
-      } else {
-        messages.push(t('dynamic.hintSave', { expected, reduction, gain: winGain }));
-      }
+      const values = {
+        count: candidates.length,
+        expected: calculatedResults.hint.expectedRemaining.toFixed(1),
+        before: `${(hintAdvice.currentOneShotProb * 100).toFixed(2)}%`,
+        after: `${(hintAdvice.expectedOneShotProb * 100).toFixed(2)}%`,
+        gain: (hintAdvice.oneShotGain * 100).toFixed(2)
+      };
+      if (hintAdvice.decision === 'use') messages.push(`<strong>${t('dynamic.hintUseCompact', values)}</strong>`);
+      else if (hintAdvice.reason === 'noAttempts') messages.push(t('dynamic.hintSaveNoAttempts'));
+      else if (hintAdvice.reason === 'scarceResource') messages.push(t('dynamic.hintSaveScarce', values));
+      else messages.push(t('dynamic.hintSaveCompact', values));
     }
-    messages.push(t('dynamic.calculationAssumption', { seconds: (calculatedResults.durationMs / 1000).toFixed(2) }));
   }
-  if (problems > 1) messages.push(t('dynamic.sharedAttempts', { problems, attempts, current: currentBudget }));
-  strategyMsg.innerHTML = messages.map(message => `<p>${message}</p>`).join('');
+  strategyMsg.innerHTML = messages.map((message, index) => `<p class="${index === 0 ? 'strategy-result' : 'strategy-advice'}">${message}</p>`).join('');
 }
 
 for (const input of [totalAttemptsLeft, hintsLeft, problemsLeft]) {

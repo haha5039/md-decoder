@@ -208,9 +208,10 @@ export function allocateAttempts(totalAttempts, problemsLeft) {
   return problems > 1 ? Math.floor(total / problems) : total;
 }
 
-export function recommendHintUse({ attempts, remainingHints, candidateCount, hint, bestGuessExpectedRemaining }) {
+export function recommendHintUse({ attempts, remainingHints, problemsLeft = 1, candidateCount, hint, bestGuessExpectedRemaining }) {
   const hints = Number.isFinite(Number(remainingHints)) ? Math.max(0, Math.floor(Number(remainingHints))) : 0;
   const tries = Number.isFinite(Number(attempts)) ? Math.max(0, Math.floor(Number(attempts))) : 0;
+  const problems = Number.isFinite(Number(problemsLeft)) ? Math.max(1, Math.floor(Number(problemsLeft))) : 1;
   const candidates = Number.isFinite(Number(candidateCount)) ? Math.max(0, Number(candidateCount)) : 0;
   if (!hints) return { decision: 'unavailable', reason: 'noHints' };
   if (!hint?.unknownCount || candidates <= 1) return {
@@ -225,19 +226,33 @@ export function recommendHintUse({ attempts, remainingHints, candidateCount, hin
   const guessReduction = Math.max(0, candidates - guessRemaining);
   const hintReduction = Math.max(0, candidates - expectedRemaining);
   const relativeToGuess = guessReduction > 0 ? hintReduction / guessReduction : (hintReduction > 0 ? Infinity : 0);
-  const metrics = { expectedRemaining, reductionRate, oneShotGain, relativeToGuess };
+  const currentOneShotProb = Math.max(0, hint.currentOneShotProb || 0);
+  const expectedOneShotProb = Math.max(currentOneShotProb, hint.expectedOneShotProb || currentOneShotProb);
+  const hintAvailability = hints / problems;
+  const scarcity = hintAvailability < 0.75 ? 'scarce' : hintAvailability < 1.5 ? 'balanced' : 'abundant';
+  const metrics = { expectedRemaining, reductionRate, oneShotGain, relativeToGuess, currentOneShotProb, expectedOneShotProb, scarcity };
 
   if (hintReduction < 0.5 && oneShotGain < 0.001) return { decision: 'save', reason: 'noValue', ...metrics };
-  if (tries === 0) {
-    const usefulBeforeNext = oneShotGain >= 0.01 || reductionRate >= 0.15 || relativeToGuess >= 0.5;
-    return { decision: usefulBeforeNext ? 'use' : 'save', reason: usefulBeforeNext ? 'beforeNextAttempt' : 'weakValue', ...metrics };
-  }
-  if (tries === 1) {
-    const protectsLastAttempt = oneShotGain >= 0.01 || reductionRate >= 0.12 || relativeToGuess >= 0.4;
-    return { decision: protectsLastAttempt ? 'use' : 'save', reason: protectsLastAttempt ? 'lastAttempt' : 'weakValue', ...metrics };
-  }
-  const strongNow = oneShotGain >= 0.02 || reductionRate >= 0.30 || relativeToGuess >= 0.55;
-  return { decision: strongNow ? 'use' : 'save', reason: strongNow ? 'strongCurrentValue' : 'weakValue', ...metrics };
+  // Hints are granted at one quarter of the daily attempt rate. Preserve their
+  // option value until an attempt can immediately use the revealed property.
+  if (tries === 0) return { decision: 'save', reason: 'noAttempts', ...metrics };
+
+  const tier = scarcity === 'scarce'
+    ? (tries === 1 ? [0.08, 0.55, 0.75] : tries === 2 ? [0.10, 0.65, 0.85] : [0.15, 0.75, 0.95])
+    : scarcity === 'balanced'
+      ? (tries === 1 ? [0.05, 0.45, 0.65] : tries === 2 ? [0.08, 0.55, 0.75] : [0.12, 0.65, 0.85])
+      : (tries === 1 ? [0.03, 0.35, 0.50] : tries === 2 ? [0.05, 0.45, 0.60] : [0.08, 0.55, 0.70]);
+  const [minimumGain, minimumReduction, minimumRelativeValue] = tier;
+  const nearSolution = expectedRemaining <= 3 && expectedOneShotProb >= 0.5;
+  const decisive = expectedOneShotProb >= 0.5 && oneShotGain >= 0.10;
+  const measuredValue = oneShotGain >= minimumGain
+    && (reductionRate >= minimumReduction || relativeToGuess >= minimumRelativeValue);
+  const use = nearSolution || decisive || measuredValue;
+  return {
+    decision: use ? 'use' : 'save',
+    reason: use ? (tries === 1 ? 'protectLastAttempt' : 'strongCurrentValue') : (scarcity === 'scarce' ? 'scarceResource' : 'weakValue'),
+    ...metrics
+  };
 }
 
 export function distinctScores(list, criteria) {

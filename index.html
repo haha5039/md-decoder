@@ -37,12 +37,16 @@
               <option value="en">English</option>
             </select>
           </label>
+          <button id="themeToggle" class="theme-toggle" type="button" aria-label="라이트 모드로 전환">
+            <span data-theme-icon>☀️</span>
+            <span data-theme-label>라이트</span>
+          </button>
         </div>
       </header>
       <main class="container">
         <!-- Left Panel: Input & Controls -->
         <section class="panel input-panel">
-          <div class="flex-between" style="border-bottom: 1px solid var(--border); padding-bottom: 0.75rem; margin-bottom: 1rem;">
+          <div class="flex-between input-panel-header" style="border-bottom: 1px solid var(--border); padding-bottom: 0.75rem; margin-bottom: 1rem;">
             <h2 style="margin: 0; font-size: 1.15rem; display: flex; align-items: center; gap: 0.4rem; white-space: nowrap;">🔍 <span data-i18n="main.inputSettings">정보 입력 및 설정</span></h2>
             <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: flex-end;">
               <button id="nextChallengeBtn" class="btn-secondary btn-sm" data-i18n="main.nextChallenge" style="margin: 0; padding: 0.45rem 0.9rem; font-size: 0.85rem; border-color: #22c55e; white-space: nowrap;">다음 문제</button>
@@ -108,7 +112,7 @@
               <span>🔍</span> <span data-i18n="main.directTitle">1. 정답 카드 확실한 정보 입력</span>
             </h3>
             <p class="hint-desc" data-i18n="main.directDesc" style="margin-bottom: 0.75rem;">게임에서 공개된 실제 값을 입력하세요. 프레임은 펜듈럼 포함 여부까지 똑같이 선택하세요.</p>
-            <div class="direct-hint-grid" style="grid-template-columns: repeat(2, 1fr); gap: 0.6rem;">
+            <div class="direct-hint-grid direct-input-fields" style="grid-template-columns: repeat(2, 1fr); gap: 0.6rem;">
               <div class="form-group">
                 <label for="directFrame" data-i18n="stats.frameType" style="font-size: 0.75rem; margin-bottom: 0.2rem;">카드 프레임</label>
                 <select id="directFrame" style="padding: 0.5rem 0.7rem; font-size: 0.9rem; border-radius: 8px;">
@@ -312,13 +316,7 @@
             </div>
             
             <div id="strategyMsg" style="margin-bottom: 1rem;">
-              <div style="background: rgba(59, 130, 246, 0.05); border: 1px dashed rgba(59, 130, 246, 0.3); padding: 1rem; border-radius: 8px; font-size: 0.85rem; line-height: 1.5; color: var(--text-muted); display: flex; align-items: center; gap: 0.75rem;">
-                <span style="font-size: 1.5rem; flex-shrink: 0;">⚡</span>
-                <div>
-                  <strong style="color: #60a5fa; display: block; margin-bottom: 0.2rem;">실시간 전략 추천 준비 완료</strong>
-                  현재 단서들을 기반으로 최적의 판단을 내릴 수 있습니다. 우측 상단의 <strong>[최적의 카드 계산]</strong> 버튼을 클릭하여 추천 정답 스나이핑 카드와 극한의 정찰 카드를 확인하세요.
-                </div>
-              </div>
+              <p class="strategy-summary">현재 단서를 기반으로 최적의 판단을 계산할 수 있습니다. [최적의 카드 계산]을 눌러 추천 카드를 확인하세요.</p>
             </div>
 
             <div class="form-group mt-4" style="margin-bottom: 1rem;">

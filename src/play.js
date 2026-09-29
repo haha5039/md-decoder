@@ -3,9 +3,11 @@ import { allCards as rawCards } from './cards_data.js';
 import { isFrameMatch, isLevelMatch, getValidLevels, renderCardStatsHTML, translateAttribute, translateFrame, translateRace, getTargetRulesLevel, filterCandidatesByHints, getGuessFeedback, escapeHTML, formatStat } from './utils.js';
 import { getCachedCards } from './db.js';
 import { alternateCardName, initializeI18n, localizeCardName, t } from './i18n.js';
+import { initializeTheme } from './theme.js';
 
 let allCards = [];
 initializeI18n(() => window.location.reload());
+initializeTheme();
 
 
 // DOM Elements

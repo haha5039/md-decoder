@@ -220,6 +220,9 @@ test('Korean and English labels and card names are available', () => {
   const bilingualCard = { name: '검투수 다레이오스', nameEn: 'Gladiator Beast Dareios' };
   setLocale('en');
   assert.equal(t('stats.attribute'), 'Attribute');
+  assert.equal(t('stats.level'), 'Level');
+  assert.equal(t('theme.light'), 'Light');
+  assert.equal(t('dynamic.bestOneShotCompact', { card: 'Card', oneShot: '1%' }).includes('—'), false);
   assert.equal(localizeCardName(bilingualCard), 'Gladiator Beast Dareios');
   setLocale('ko');
   assert.equal(t('stats.attribute'), '속성');

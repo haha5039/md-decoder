@@ -107,12 +107,20 @@ test('random hint value uses the current candidate distribution and best follow-
 });
 
 test('hint recommendations react to measured current value instead of dividing by challenge count', () => {
-  const valuable = { unknownCount: 3, expectedRemaining: 20, oneShotGain: 0.12 };
-  const weak = { unknownCount: 3, expectedRemaining: 98, oneShotGain: 0.001 };
-  assert.equal(recommendHintUse({ attempts: 1, remainingHints: 1, candidateCount: 100, hint: valuable, bestGuessExpectedRemaining: 60 }).decision, 'use');
-  assert.equal(recommendHintUse({ attempts: 0, remainingHints: 1, candidateCount: 100, hint: valuable, bestGuessExpectedRemaining: 60 }).reason, 'beforeNextAttempt');
-  assert.equal(recommendHintUse({ attempts: 4, remainingHints: 9, candidateCount: 100, hint: weak, bestGuessExpectedRemaining: 20 }).decision, 'save');
+  const valuable = { unknownCount: 3, expectedRemaining: 20, currentOneShotProb: 0.10, expectedOneShotProb: 0.22, oneShotGain: 0.12 };
+  const weak = { unknownCount: 3, expectedRemaining: 55, currentOneShotProb: 0.01, expectedOneShotProb: 0.012, oneShotGain: 0.002 };
+  assert.equal(recommendHintUse({ attempts: 1, remainingHints: 1, problemsLeft: 10, candidateCount: 100, hint: valuable, bestGuessExpectedRemaining: 60 }).decision, 'use');
+  const noAttempts = recommendHintUse({ attempts: 0, remainingHints: 5, problemsLeft: 1, candidateCount: 100, hint: valuable, bestGuessExpectedRemaining: 60 });
+  assert.equal(noAttempts.decision, 'save'); assert.equal(noAttempts.reason, 'noAttempts');
+  assert.equal(recommendHintUse({ attempts: 4, remainingHints: 9, problemsLeft: 10, candidateCount: 100, hint: weak, bestGuessExpectedRemaining: 20 }).decision, 'save');
   assert.equal(recommendHintUse({ attempts: 4, remainingHints: 0, candidateCount: 100, hint: valuable, bestGuessExpectedRemaining: 60 }).reason, 'noHints');
+});
+
+test('routine early-game narrowing does not spend a scarce daily hint', () => {
+  const early = { unknownCount: 5, expectedRemaining: 3000, currentOneShotProb: 0.001, expectedOneShotProb: 0.006, oneShotGain: 0.005 };
+  const advice = recommendHintUse({ attempts: 4, remainingHints: 1, problemsLeft: 8, candidateCount: 6000, hint: early, bestGuessExpectedRemaining: 500 });
+  assert.equal(advice.decision, 'save');
+  assert.equal(advice.reason, 'scarceResource');
 });
 
 test('known rules exceptions use correct identities and retain printed zero', () => {
