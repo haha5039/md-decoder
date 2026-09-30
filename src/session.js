@@ -17,6 +17,25 @@ export function consumeAttempt(value) {
   const cost = available > 0 ? 1 : 0;
   return { remaining: available - cost, cost };
 }
+// One newly recorded property corresponds to one in-game hint. Old sessions
+// already containing a manual revelation have used their initial free hint.
+export function initialHintAvailable(hints) {
+  return !hints.some(hint => hint.type === 'direct' && !hint.supplemental && !hint.automatic
+    && hint.source !== 'reveal' && (hint.hintKind === 'initial' || !hint.hintKind));
+}
+
+export function recordDirectHints(hints, additions, remainingHints, { bonus = false } = {}) {
+  let remaining = budget(remainingHints);
+  let free = initialHintAvailable(hints);
+  const recorded = additions.map(hint => {
+    const hintKind = bonus ? 'bonus' : free ? 'initial' : 'paid';
+    if (!bonus) free = false;
+    const hintCost = hintKind === 'paid' && remaining > 0 ? 1 : 0;
+    remaining -= hintCost;
+    return { ...hint, hintKind, hintCost };
+  });
+  return { hints: recorded, remaining, cost: budget(remainingHints) - remaining };
+}
 export function parseStatInput(value, stat) {
   const text = value.trim();
   if (!text) return undefined;

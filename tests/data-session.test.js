@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { isCardDecoderEligible, mergeMasterDuelCards, normalizeCards, validateCards } from '../src/data.js';
-import { applyAutomaticMatches, budget, consumeAttempt, createBatchId, nextChallenge, parseStatInput, removeInputBatch, restoreSession, saveSession, hasSolvedGuess } from '../src/session.js';
+import { applyAutomaticMatches, budget, consumeAttempt, createBatchId, initialHintAvailable, recordDirectHints, nextChallenge, parseStatInput, removeInputBatch, restoreSession, saveSession, hasSolvedGuess } from '../src/session.js';
 import { escapeHTML } from '../src/utils.js';
 import { ATTRIBUTE_ORDER, FRAME_ORDER, RACE_ORDER, localizeCardName, setLocale, t } from '../src/i18n.js';
 
@@ -145,6 +145,49 @@ test('recording free revelations never consumes or refunds paid hints', () => {
 test('guess results remain recordable when no attempts are left', () => {
   assert.deepEqual(consumeAttempt(4), { remaining: 3, cost: 1 });
   assert.deepEqual(consumeAttempt(0), { remaining: 0, cost: 0 });
+});
+
+const direct = (stat, value, batchId) => ({ type: 'direct', stat, value, isCorrect: true, isExact: true, batchId });
+
+test('first property is free, each later hint costs one, and undo refunds only actual deductions', () => {
+  const first = recordDirectHints([], [direct('attribute', 'DARK', 'first')], 2);
+  assert.equal(first.remaining, 2); assert.equal(first.hints[0].hintKind, 'initial');
+  const second = recordDirectHints(first.hints, [direct('atk', 1000, 'second')], first.remaining);
+  assert.equal(second.remaining, 1); assert.equal(second.cost, 1);
+  assert.equal(removeInputBatch([...first.hints, ...second.hints], 'second').hintsRefund, 1);
+  assert.equal(removeInputBatch(first.hints, 'first').hintsRefund, 0);
+});
+
+test('multi-property input includes only one initial free property and remains recordable at zero', () => {
+  const recorded = recordDirectHints([], [direct('attribute', 'DARK', 'a'), direct('atk', 1000, 'a'), direct('def', 1000, 'a')], 1);
+  assert.equal(recorded.remaining, 0); assert.equal(recorded.cost, 1);
+  assert.deepEqual(recorded.hints.map(hint => hint.hintCost), [0, 1, 0]);
+  const extra = recordDirectHints(recorded.hints, [direct('race', 'Dragon', 'b')], 0);
+  assert.equal(extra.hints.length, 1); assert.equal(extra.remaining, 0);
+  assert.equal(removeInputBatch(extra.hints, 'b').hintsRefund, 0);
+});
+
+test('bonus revelations and automatic guess matches do not consume the initial free recording', () => {
+  const automatic = applyAutomaticMatches([{ type: 'guess', stat: 'frameType', isCorrect: true, cardId: 1, batchId: 'guess' }], [api]);
+  assert.equal(initialHintAvailable(automatic), true);
+  const bonus = recordDirectHints(automatic, [direct('atk', 1000, 'bonus')], 2, { bonus: true });
+  assert.equal(bonus.remaining, 2); assert.equal(initialHintAvailable(bonus.hints), true);
+  const initial = recordDirectHints(bonus.hints, [direct('attribute', 'DARK', 'initial')], 2);
+  assert.equal(initial.cost, 0);
+});
+
+test('hint costs survive reload, old clues are not charged retroactively, and next challenge is free again', () => {
+  const recorded = recordDirectHints([], [direct('attribute', 'DARK', 'a'), direct('atk', 1000, 'b')], 3);
+  let saved;
+  const storage = { setItem: (_, value) => { saved = value; }, getItem: () => saved };
+  saveSession(storage, { hints: recorded.hints, attempts: 4, remainingHints: recorded.remaining, problems: 2 });
+  const restored = restoreSession(storage, [api]);
+  assert.equal(initialHintAvailable(restored.hints), false);
+  assert.equal(removeInputBatch(restored.hints, 'b').hintsRefund, 1);
+  assert.equal(initialHintAvailable([direct('attribute', 'DARK', 'legacy')]), false);
+  const next = nextChallenge(restored);
+  assert.equal(initialHintAvailable(next.hints), true);
+  assert.equal(recordDirectHints(next.hints, [direct('race', 'Dragon', 'next')], next.remainingHints).cost, 0);
 });
 
 test('batch IDs work without secure-context browser APIs', () => {

@@ -82,18 +82,59 @@ test('recommendation display removes duplicate statistical profiles', () => {
   assert.equal(distinct.find(score => score.card.atk === 1000).equivalentChoices, 2);
 });
 
-test('two-shot strategy is selected in short attempt windows', () => {
+test('automatic strategy matches the computed horizon and keeps exploration beyond two attempts', () => {
   assert.equal(chooseCriteria({ attempts: 2, twoTurnExact: true, candidateCount: 20 }), 'twoShot');
-  assert.equal(chooseCriteria({ attempts: 4, twoTurnExact: true, candidateCount: 20 }), 'twoShot');
+  assert.equal(chooseCriteria({ attempts: 4, twoTurnExact: true, horizonDepth: 4, candidateCount: 12 }), 'horizon');
+  assert.equal(chooseCriteria({ attempts: 3, twoTurnExact: true, horizonDepth: 3, candidateCount: 20 }), 'horizon');
+  assert.equal(chooseCriteria({ attempts: 4, twoTurnExact: true, horizonDepth: 2, candidateCount: 50 }), 'expected');
   assert.equal(chooseCriteria({ attempts: 5, twoTurnExact: true, candidateCount: 20 }), 'expected');
   assert.equal(chooseCriteria({ attempts: 1, twoTurnExact: true, candidateCount: 2 }), 'oneShot');
 });
 
-test('attempts are reserved evenly across remaining challenges', () => {
-  assert.equal(allocateAttempts(7, 3), 2);
-  assert.equal(allocateAttempts(4, 4), 1);
+test('planning horizon does not force a one-shot gamble just because several challenges remain', () => {
+  assert.equal(allocateAttempts(7, 3), 7);
+  assert.equal(allocateAttempts(4, 4), 4);
+  assert.equal(allocateAttempts(4, 8), 4);
   assert.equal(allocateAttempts(4, 1), 4);
   assert.equal(allocateAttempts(0, 3), 0);
+  assert.equal(allocateAttempts(1, 3), 1);
+});
+
+test('three-turn lookahead improves a concrete ordinary-card state over the two-turn first move', () => {
+  const profiles = [[2,0,4],[1,1,1],[1,0,0],[3,1,3],[3,2,2],[2,0,0],[2,2,2],[2,1,4],
+    [4,0,2],[4,0,4],[2,0,2],[2,1,2],[2,2,4],[2,0,0],[3,1,4],[4,2,2],[2,0,3],
+    [2,2,0],[4,1,2],[4,0,4],[1,2,0],[3,0,2],[2,2,0],[1,2,1],[1,1,1],[4,1,0]];
+  const cards = profiles.map(([level, race, atk], i) => card(i + 1, { level, race: ['Dragon', 'Warrior', 'Machine'][race], atk: atk * 1000 }));
+  const result = createSolver(cards)({ candidateIds: cards.map(item => item.id), attempts: 3 });
+  assert.equal(result.horizonDepth, 3); assert.equal(result.horizonExact, true);
+  const scores = [...result.snipes, ...result.scouts];
+  close(sortScores(scores, 'horizon')[0].horizonProb, 25 / 26);
+  close(sortScores(scores, 'twoShot')[0].horizonProb, 24 / 26);
+});
+
+test('four-turn search retains target multiplicity and prefers saving attempts at equal success', () => {
+  const cards = [card(1), card(2), card(3, { atk: 2000 }), card(4, { atk: 3000 })];
+  const result = createSolver(cards)({ candidateIds: [1, 2, 3, 4], attempts: 4 });
+  const best = sortScores(result.snipes, 'horizon')[0];
+  assert.equal(result.horizonDepth, 4); assert.equal(result.horizonExact, true);
+  close(best.horizonProb, 1); close(best.horizonExpectedAttempts, 1.75);
+  assert.equal(best.card.atk, 1000);
+});
+
+test('a hint that raises immediate success can still be saved when two guesses already guarantee success', () => {
+  const cards = [card(1), card(2, { atk: 2000 })];
+  const result = createSolver(cards)({ candidateIds: [1, 2], attempts: 2, revealedStats: ['frameType', 'level', 'attribute', 'race', 'def'] });
+  close(result.hint.oneShotGain, 0.5); close(result.hint.solveGain, 0); close(result.hint.attemptsSaved, 0.5);
+  const request = { attempts: 4, remainingHints: 1, problemsLeft: 1, candidateCount: 2, hint: result.hint, bestGuessExpectedRemaining: result.bestGuessExpectedRemaining };
+  assert.equal(recommendHintUse(request).decision, 'save');
+  assert.equal(recommendHintUse({ ...request, remainingHints: 8 }).decision, 'use');
+});
+
+test('guaranteed immediate answers do not spend hints even when many named candidates remain', () => {
+  const cards = [card(1), card(2)];
+  const result = createSolver(cards)({ candidateIds: [1, 2], attempts: 4 });
+  assert.equal(recommendHintUse({ attempts: 4, remainingHints: 5, candidateCount: 2, hint: result.hint,
+    bestGuessExpectedRemaining: result.bestGuessExpectedRemaining }).decision, 'save');
 });
 
 test('random hint value uses the current candidate distribution and best follow-up guess', () => {

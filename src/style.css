@@ -32,6 +32,7 @@
   --panel-border: rgba(30, 41, 59, 0.15);
   --text-main: #172033;
   --text-muted: #5f6b7a;
+  --accent-gold: #92400e;
   --heading-color: #111827;
   --input-bg: rgba(248, 250, 252, 0.96);
   --dropdown-bg: #ffffff;
@@ -418,7 +419,7 @@ button {
 
 @media (min-width: 900px) {
   .card-grid {
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(125px, 1fr));
     gap: 0.75rem;
   }
 }
@@ -430,7 +431,7 @@ button {
   text-align: center;
   transition: transform 0.2s;
   cursor: pointer;
-  max-width: 120px;
+  max-width: 155px;
   width: 100%;
   margin: 0 auto;
   min-width: 0;
@@ -439,16 +440,6 @@ button {
 .card-item:hover {
   transform: translateY(-4px);
   background: rgba(255, 255, 255, 0.1);
-}
-
-.card-grid.recommendation-grid {
-  grid-template-columns: repeat(var(--recommendation-columns, 1), minmax(0, 140px));
-  justify-content: start;
-}
-
-.recommendation-grid .card-item {
-  margin: 0;
-  max-width: 140px;
 }
 
 .recommendation-grid .card-item-title {
@@ -472,14 +463,19 @@ button {
 }
 
 .card-item-title {
-  font-size: 0.8rem;
-  white-space: nowrap;
+  font-size: 0.9rem;
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  min-height: 2.7em;
+  line-height: 1.35;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .card-item-stats {
-  font-size: 0.65rem;
+  font-size: 0.8rem;
   color: var(--text-muted);
   display: flex;
   flex-direction: column;
@@ -876,8 +872,8 @@ a {
 .search-dropdown-title {
   font-size: 0.9rem;
   font-weight: 600;
-  color: #fff;
-  white-space: nowrap;
+  color: var(--text-main);
+  white-space: normal;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -981,11 +977,14 @@ a {
   }
 }
 
-.rec-header-mobile {
+.rec-header-row {
   display: flex;
   flex-direction: column;
+  align-items: stretch;
   gap: 1rem;
+  margin-bottom: 1rem;
 }
+.rec-header-row > div { min-width: 0; }
 
 .rec-criteria-group {
   display: grid;
@@ -995,27 +994,72 @@ a {
 
 .rec-calc-btn {
   width: 100%;
-  height: 46px;
+  min-height: 48px;
   font-size: 1rem;
-  padding: 0 1.5rem;
+  padding: 0.75rem 1.5rem;
   margin: 0;
   flex-shrink: 0;
   white-space: nowrap;
 }
 
-@media (min-width: 900px) {
-  .rec-header-mobile {
+@media (min-width: 1200px) {
+  .rec-header-row {
     flex-direction: row;
     justify-content: space-between;
     align-items: center;
   }
   .rec-calc-btn {
-    width: auto !important;
+    width: auto;
     min-width: 220px;
   }
+}
+@media (min-width: 900px) {
   .rec-criteria-group {
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(3, 1fr);
   }
+}
+
+/* Readable controls and resource guidance for the deduction workflow. */
+#guessResultSection, #recommendationsSection { scroll-margin-top: 16px; }
+.resource-note { color: var(--text-muted); font-size: 0.85rem; line-height: 1.6; margin: 0.65rem 0; }
+.applied-hints-scroll { max-height: 320px; overflow-y: auto; padding-right: 0.25rem; }
+@media (min-width: 900px) {
+  .applied-hints-scroll { max-height: none; overflow-y: visible; }
+}
+.rec-criteria-group .btn-toggle { min-height: 46px; font-size: 0.85rem !important; padding: 0.6rem 0.4rem !important; line-height: 1.35; }
+.known-stats { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 0.5rem; margin-bottom: 1.1rem; }
+.known-stat { background: var(--soft-bg); padding: 0.5rem 0.65rem; border-radius: 8px; border: 1px solid var(--panel-border); min-width: 0; }
+.known-stat span { display: block; color: var(--text-muted); font-size: 0.78rem; }
+.known-stat strong { display: block; font-size: 0.9rem; overflow-wrap: anywhere; }
+.known-stat.is-known { border-color: rgba(34,197,94,0.45); }
+.candidate-stats .stat-badge, .search-dropdown-stats .stat-badge { font-size: 0.75rem !important; padding: 0.15rem 0.35rem !important; }
+.candidate-stats-atkdef { font-size: 0.8rem !important; }
+.stat-badge.frame-effect { color: #351400; }
+.stat-badge.frame-fusion { background: #7e22ce; }
+.hints-list .history-batch { display: block; padding: 0.75rem; border-bottom: 1px solid var(--panel-border); }
+.history-batch-heading { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.5rem; font-size: 0.85rem; }
+.history-batch-heading strong { flex: 1; min-width: 0; }
+.history-cost { font-size: 0.75rem; color: var(--text-muted); }
+.history-stats { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 0.4rem; }
+.history-stat { display: grid; grid-template-columns: 1fr auto; gap: 0.1rem; background: var(--soft-bg); border-radius: 6px; padding: 0.35rem 0.45rem; min-width: 0; }
+.history-stat span { font-size: 0.72rem; grid-column: 1 / -1; color: var(--text-muted); }
+.history-stat strong { font-size: 0.8rem; overflow-wrap: anywhere; }
+.history-stat:only-child { grid-column: 1 / -1; display: flex; align-items: center; gap: 0.5rem; }
+.history-stat:only-child span { flex: 1; }
+.btn-delete-hint { background: var(--soft-bg); border: 1px solid var(--panel-border); border-radius: 6px; color: var(--text-main); padding: 0.4rem 0.55rem; font-size: 0.75rem; }
+#scoutHeader { color: #c084fc; }
+#strategyMsg.guaranteed-result { padding: 0.85rem; background: rgba(34,197,94,0.12); border: 1px solid rgba(34,197,94,0.6); border-radius: 10px; }
+.card-item:focus-visible, button:focus-visible, a:focus-visible { outline: 3px solid var(--accent-blue); outline-offset: 3px; }
+.dropdown-item[aria-selected="true"] { background: rgba(59,130,246,0.18); outline: 2px solid var(--accent-blue); }
+:root[data-theme="light"] .btn-primary, :root[data-theme="light"] .btn-calc { background: linear-gradient(135deg,#fbbf24,#f59e0b); }
+:root[data-theme="light"] .stat-badge.attr { color: #1d4ed8; }
+:root[data-theme="light"] .stat-badge.race, :root[data-theme="light"] #scoutHeader { color: #7e22ce; }
+:root[data-theme="light"] .stat-badge.atk-def { color: var(--text-main); background: rgba(15,23,42,0.06); }
+:root[data-theme="light"] .history-stat.res-correct { color: #166534; }
+:root[data-theme="light"] .history-stat.res-wrong { color: #b91c1c; }
+@media (max-width: 768px) {
+  .status-row { gap: 0.4rem; flex-wrap: wrap; }
+  .results-header { align-items: flex-start; gap: 0.6rem; flex-wrap: wrap; }
 }
 
 .hint-desc {
@@ -1100,7 +1144,7 @@ a {
 
 @media (max-width: 768px) {
   .candidate-stats-text, .candidate-stats-atkdef {
-    font-size: 0.65rem !important;
+    font-size: 0.8rem !important;
   }
 }
 

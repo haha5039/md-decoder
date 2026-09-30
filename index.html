@@ -106,6 +106,8 @@
             </div>
           </div>
 
+          <p class="resource-note" data-i18n="main.resourceNote">이벤트 종료까지 사용할 도전·힌트와 남은 문제 수를 입력하세요. 지급 횟수는 자동으로 더하지 않습니다.</p>
+
           <!-- 1. Direct Hints Section -->
           <div class="panel-section" style="margin-bottom: 1.25rem;">
             <h3 style="font-size: 0.95rem; margin-bottom: 0.5rem; border-bottom: 1px solid var(--panel-border); padding-bottom: 0.4rem; color: var(--text-main); display: flex; align-items: center; gap: 0.3rem;">
@@ -200,7 +202,8 @@
                 <input type="text" inputmode="text" id="directDef" placeholder="예: 2000 또는 ?" data-i18n-placeholder="main.defPlaceholder" style="padding: 0.5rem 0.7rem; font-size: 0.9rem; border-radius: 8px;">
               </div>
             </div>
-            <button id="applyDirectHintBtn" class="btn-primary" data-i18n="main.applyDirect" style="margin-top: 0.75rem; padding: 0.65rem 1.25rem; font-size: 0.9rem; font-weight: 600;">확실한 정보 적용</button>
+            <p class="resource-note" data-i18n="main.hintCostNote">최초 공개 항목 1개는 무료 · 이후 새 항목마다 힌트 1회 차감</p>
+            <button id="applyDirectHintBtn" class="btn-primary" data-i18n="main.recordHint">힌트 기록</button>
           </div>
 
           <!-- 2. Guess Result Section -->
@@ -210,8 +213,8 @@
             </h3>
             <p class="hint-desc" data-i18n="main.guessDesc" style="margin-bottom: 0.75rem;">카드를 선택하고 인게임에 표시된 6개 항목의 O/X만 기록하세요.</p>
             <div class="search-container">
-              <input type="text" id="cardSearch" placeholder="카드 이름 검색 (한글/영어 가능)..." data-i18n-placeholder="main.searchPlaceholder" autocomplete="off" style="padding: 0.65rem 1rem; font-size: 0.95rem; border-radius: 8px;">
-              <div id="searchDropdown" class="dropdown hidden"></div>
+              <input type="text" id="cardSearch" aria-label="카드 이름 검색" data-i18n-aria-label="main.cardSearchLabel" role="combobox" aria-autocomplete="list" aria-controls="searchDropdown" aria-expanded="false" placeholder="카드 이름 검색 (한글/영어 가능)..." data-i18n-placeholder="main.searchPlaceholder" autocomplete="off" style="padding: 0.65rem 1rem; font-size: 0.95rem; border-radius: 8px;">
+              <div id="searchDropdown" class="dropdown hidden" role="listbox" aria-label="검색 결과" data-i18n-aria-label="main.searchResults"></div>
             </div>
             
             <div id="selectedCardContainer" class="hidden" style="margin-top: 0.75rem; background: rgba(0, 0, 0, 0.2); border-radius: var(--radius); padding: 0.75rem; border: 1px solid var(--border);">
@@ -290,7 +293,7 @@
             <h2 style="font-size: 0.9rem; margin-bottom: 0.5rem; border: none; padding: 0; color: var(--text-main); display: flex; align-items: center; gap: 0.25rem;">
               <span>📜</span> <span data-i18n="main.appliedHints">적용된 단서 목록</span>
             </h2>
-            <div style="max-height: 150px; overflow-y: auto; padding-right: 0.25rem;" class="custom-scroll">
+            <div class="custom-scroll applied-hints-scroll">
               <ul id="appliedHintsList" class="hints-list" style="margin: 0;"></ul>
             </div>
           </div>
@@ -305,11 +308,12 @@
             </div>
             <span class="badge" id="candidatesCount" role="status" aria-live="polite">로딩 중...</span>
           </div>
+          <div id="knownStats" class="known-stats" aria-label="밝혀진 정보" data-i18n-aria-label="play.revealed"></div>
           
           <div class="recommendations panel-section mt-4" id="recommendationsSection">
-            <div class="rec-header-row" style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1rem;">
+            <div class="rec-header-row">
               <div style="display: flex; flex-direction: column; gap: 0.25rem;">
-                <h3 data-i18n="main.recommendTitle" style="margin: 0; font-size: 1.15rem; display: flex; align-items: center; gap: 0.4rem; white-space: nowrap; border-bottom: none; padding-bottom: 0;">💡 추천 픽 및 전략</h3>
+                <h3 data-i18n="main.recommendTitle" style="margin: 0; font-size: 1.15rem; display: flex; align-items: center; gap: 0.4rem; border-bottom: none; padding-bottom: 0;">💡 추천 픽 및 전략</h3>
                 <p class="rec-desc" data-i18n="main.recommendDesc" style="margin: 0; color: var(--text-muted); font-size: 0.85rem;">다양한 게임 상황에 맞춤화된 추천 판단 방식을 제공합니다.</p>
               </div>
               <button id="calcRecBtn" class="btn-calc rec-calc-btn" data-i18n="main.calculate">최적의 카드 계산</button>
@@ -326,8 +330,10 @@
                 <button class="btn-toggle" data-criteria="minimax" data-i18n="criteria.minimax" style="font-size: 0.75rem; padding: 0.5rem 0.25rem;">최악 상황 최소화 (Minimax)</button>
                 <button class="btn-toggle" data-criteria="oneShot" data-i18n="criteria.oneShot" style="font-size: 0.75rem; padding: 0.5rem 0.25rem;">즉시 정답 확률</button>
                 <button class="btn-toggle" data-criteria="twoShot" data-i18n="criteria.twoShot" disabled title="후보 60장 이하에서 계산합니다." style="font-size: 0.75rem; padding: 0.5rem 0.25rem;">2회 내 성공 확률</button>
+                <button class="btn-toggle" data-criteria="horizon" data-i18n="criteria.horizon" disabled>3~4회 내 성공 확률</button>
                 <button class="btn-toggle" data-criteria="expected" data-i18n="criteria.expected" style="font-size: 0.75rem; padding: 0.5rem 0.25rem;">평균 잔여 최소 (Average)</button>
               </div>
+              <p id="autoCriteriaReason" class="resource-note" aria-live="polite"></p>
               <div id="criteriaDesc" style="font-size: 0.8rem; color: var(--text-muted); background: rgba(0,0,0,0.25); padding: 0.5rem 0.75rem; border-radius: 6px; border-left: 3px solid var(--accent-blue); line-height: 1.4;">
                 <strong>기대 정보량 (Entropy):</strong> 전체 후보군을 가장 고르게 여러 판정 그룹으로 나누는 표준 알고리즘입니다. 실제 공개 값을 반영하며 최단 해결 횟수를 보장하지는 않습니다.
               </div>
@@ -338,9 +344,11 @@
               <p data-i18n="main.snipeDesc" style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1rem;">이번 제출로 정답이 인정될 가능성이 있는 카드입니다. 남은 도전 횟수가 적을 때 적극적으로 시도하세요.</p>
               <div id="snipeList" class="card-grid recommendation-grid"></div>
               
-              <h4 id="scoutHeader" data-i18n="main.scoutTitle" style="color: #a855f7; margin-top: 1.5rem; margin-bottom: 0.5rem; display: inline-block;">🕵️ 정보 수집용 카드 (즉시 정답 확률 0%)</h4>
-              <p data-i18n="main.scoutDesc" style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1rem;">정답은 아니지만, 현재 후보들의 경우의 수를 가장 효율적으로 좁히는 정보원 카드입니다. 남은 기회가 넉넉할 때 좋습니다.</p>
-              <div id="scoutList" class="card-grid recommendation-grid"></div>
+              <div id="scoutSection">
+                <h4 id="scoutHeader" data-i18n="main.scoutTitle" style="margin-top: 1.5rem; margin-bottom: 0.5rem;">🕵️ 정보 수집용 카드 (즉시 정답 확률 0%)</h4>
+                <p data-i18n="main.scoutDesc" class="resource-note">현재 후보를 좁히기 위한 카드입니다.</p>
+                <div id="scoutList" class="card-grid recommendation-grid"></div>
+              </div>
             </div>
           </div>
 
@@ -350,7 +358,7 @@
             <input id="candidateSearch" type="search" placeholder="한글·영어 카드 이름" data-i18n-placeholder="main.candidateSearchPlaceholder" autocomplete="off">
             <p id="candidateNotice" role="alert" hidden></p>
             <div id="candidateList" class="card-grid"></div>
-            <button id="showMoreCandidates" class="btn-secondary" data-i18n="main.showMore" hidden>후보 48장 더 보기</button>
+            <button id="showMoreCandidates" class="btn-secondary" data-i18n="main.showMore" hidden>후보 60장 더 보기</button>
           </div>
         </section>
       </main>

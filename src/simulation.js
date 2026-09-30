@@ -20,11 +20,13 @@ export function simulateScenario(cards, solve, { target, initialStat }, criteria
       return { success: false, eliminated: true, attempts: attempt - 1, durationMs };
     }
     const result = solve({ candidateIds: candidates.map(card => card.id), guessedIds: used,
+      attempts: limit - attempt + 1,
       revealedStats: [...new Set(hints.filter(hint => hint.isCorrect).map(hint => hint.stat))] });
     durationMs += result.durationMs;
     let metric = criteria;
     if (criteria === 'adaptive') {
-      metric = chooseCriteria({ attempts: limit - attempt + 1, twoTurnExact: result.twoTurnExact, candidateCount: candidates.length });
+      metric = chooseCriteria({ attempts: limit - attempt + 1, twoTurnExact: result.twoTurnExact,
+        horizonDepth: result.horizonDepth, candidateCount: candidates.length });
     }
     const guess = sortScores([...result.snipes, ...result.scouts], metric)[0]?.card;
     if (!guess) return { success: false, eliminated: false, attempts: attempt - 1, durationMs };

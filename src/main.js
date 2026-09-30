@@ -6,7 +6,7 @@ import { initializeTheme } from './theme.js';
 
 import { allocateAttempts, sortScores, distinctScores, TWO_TURN_LIMIT, chooseCriteria, recommendHintUse } from './solver.js';
 import { fetchCardManifest } from './data.js';
-import { applyAutomaticMatches, budget, consumeAttempt, createBatchId, nextChallenge, parseStatInput, removeInputBatch, saveSession, restoreSession, hasSolvedGuess } from './session.js';
+import { applyAutomaticMatches, budget, consumeAttempt, createBatchId, recordDirectHints, nextChallenge, parseStatInput, removeInputBatch, saveSession, restoreSession, hasSolvedGuess } from './session.js';
 
 import { getCachedCards, saveCachedCards, clearCachedCards } from './db.js'
 
@@ -22,9 +22,12 @@ let hints = []; // Array of { type: 'guess'|'direct', stat, isCorrect, value, ca
 let selectedCard = null;
 let calculatedResults = null;
 let activeCriteria = 'entropy';
+let manualCriteria = false;
+let calculationBudget = 0;
 let solverWorker = null;
 let calculationId = 0;
-let candidateLimit = 48;
+const CANDIDATE_PAGE_SIZE = 60;
+let candidateLimit = CANDIDATE_PAGE_SIZE;
 const CURRENT_EVENT_CARD_TOTAL = 9058;
 
 // DOM Elements
@@ -143,6 +146,7 @@ function updateUI() {
     ? t('dynamic.scopeMatch', { count: allCards.length })
     : t('dynamic.scopeMismatch', { count: allCards.length, event: CURRENT_EVENT_CARD_TOTAL, difference: Math.abs(allCards.length - CURRENT_EVENT_CARD_TOTAL) });
   renderCandidatePage();
+  renderKnownStats();
   
   if (hints.length > 0) {
     appliedHintsContainer.classList.remove('hidden');
@@ -150,6 +154,23 @@ function updateUI() {
   } else {
     appliedHintsContainer.classList.add('hidden');
   }
+}
+
+function makeCardInteractive(element, action) {
+  element.setAttribute('role', 'button');
+  element.tabIndex = 0;
+  element.onclick = action;
+  element.addEventListener('keydown', event => {
+    if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); action(); }
+  });
+}
+
+function renderKnownStats() {
+  document.getElementById('knownStats').innerHTML = ['frameType', 'attribute', 'level', 'race', 'atk', 'def'].map(stat => {
+    const known = hints.find(hint => hint.type === 'direct' && hint.stat === stat && hint.isCorrect)
+      || hints.find(hint => hint.stat === stat && hint.isCorrect);
+    return `<div class="known-stat${known ? ' is-known' : ''}"><span>${getStatNameKR(stat)}</span><strong>${known ? escapeHTML(getTranslatedValue(stat, known.value)) : '?'}</strong></div>`;
+  }).join('');
 }
 
 function renderCandidateList(list, container) {
@@ -183,7 +204,7 @@ function renderCandidateList(list, container) {
         <div class="candidate-stats-atkdef">⚔️ ${atkText} / 🛡️ ${defText}</div>
       </div>
     `;
-    div.onclick = () => selectCard(card);
+    makeCardInteractive(div, () => selectCard(card));
     container.appendChild(div);
   });
 }
@@ -251,64 +272,35 @@ function renderCandidatePage() {
 
 function renderHints() {
   appliedHintsList.innerHTML = '';
+  const batches = new Map();
   hints.forEach((hint, index) => {
     if (hint.inferred || hint.supplemental) return;
+    if (!batches.has(hint.batchId)) batches.set(hint.batchId, []);
+    batches.get(hint.batchId).push({ hint, index });
+  });
+  for (const entries of batches.values()) {
+    const { hint, index } = entries[0];
     const li = document.createElement('li');
-    li.style.display = 'flex';
-    li.style.justifyContent = 'space-between';
-    li.style.alignItems = 'center';
-    
-    let hintContent = '';
-    if (hint.type === 'direct') {
-      hintContent = `
-        <span>
-          <span class="stat-name">[${t('dynamic.confirmedHint')}]</span>
-          ${getStatNameKR(hint.stat)}: <span class="stat-val">${escapeHTML(getTranslatedValue(hint.stat, hint.value))}</span>
-        </span>
-        <div style="display: flex; align-items: center; gap: 0.5rem;">
-          <span class="stat-res res-correct">${t('dynamic.applied')}</span>
-        </div>
-      `;
-    } else {
-      const resClass = hint.isCorrect ? 'res-correct' : 'res-wrong';
-      const resText = hint.isCorrect ? 'O' : 'X';
-      const revealed = hints.find(item => item.supplemental && !item.automatic && item.batchId === hint.batchId && item.stat === hint.stat);
-      const revealedText = revealed ? ` → ${t('dynamic.revealed')}: <span class="stat-val">${escapeHTML(getTranslatedValue(revealed.stat, revealed.value))}</span>` : '';
-      const guessedCard = allCards.find(card => card.id === hint.cardId);
-      const guessedName = guessedCard ? localizeCardName(guessedCard) : hint.cardName;
-      hintContent = `
-        <span>
-          <span class="stat-name">[${escapeHTML(guessedName)}]</span>
-          ${getStatNameKR(hint.stat)}: <span class="stat-val">${escapeHTML(getTranslatedValue(hint.stat, hint.value))}</span>${revealedText}
-        </span>
-        <div style="display: flex; align-items: center; gap: 0.5rem;">
-          <span class="stat-res ${resClass}">${resText}</span>
-        </div>
-      `;
-    }
-    li.innerHTML = hintContent;
-    
+    li.className = 'history-batch';
+    const guessedCard = allCards.find(card => card.id === hint.cardId);
+    const title = hint.type === 'guess' ? (guessedCard ? localizeCardName(guessedCard) : hint.cardName)
+      : t(hint.hintKind === 'bonus' ? 'dynamic.bonusHint' : 'dynamic.confirmedHint');
+    const cost = entries.reduce((sum, entry) => sum + (entry.hint.hintCost || 0), 0);
+    li.innerHTML = `<div class="history-batch-heading"><strong>${escapeHTML(title)}</strong>${hint.type === 'direct' ? `<span class="history-cost">${t('dynamic.hintCost', { count: cost })}</span>` : ''}</div>
+      <div class="history-stats">${entries.map(({ hint: entry }) => `<span class="history-stat ${entry.isCorrect ? 'res-correct' : 'res-wrong'}"><span>${getStatNameKR(entry.stat)}</span><strong>${escapeHTML(getTranslatedValue(entry.stat, entry.value))}</strong>${entry.type === 'guess' ? `<b>${entry.isCorrect ? 'O' : 'X'}</b>` : ''}</span>`).join('')}</div>`;
     const deleteBtn = document.createElement('button');
     deleteBtn.className = 'btn-delete-hint';
-    deleteBtn.innerHTML = '❌';
-    deleteBtn.style = 'background: none; border: none; color: #ef4444; cursor: pointer; padding: 0 0.5rem; font-size: 1rem;';
-    deleteBtn.title = t('dynamic.cancelInput');
-    deleteBtn.setAttribute('aria-label', t('dynamic.cancelInput'));
+    deleteBtn.textContent = t(hint.type === 'guess' ? 'dynamic.cancelGuess' : 'dynamic.cancelInput');
     deleteBtn.onclick = () => deleteHintItem(index);
-    
-    const actionDiv = li.querySelector('div');
-    if (actionDiv) {
-      actionDiv.appendChild(deleteBtn);
-    }
-    
+    li.querySelector('.history-batch-heading').appendChild(deleteBtn);
     appliedHintsList.appendChild(li);
-  });
+  }
 }
 
 // ------------------------------------------------------------------
 // DIRECT HINT LOGIC
 // ------------------------------------------------------------------
-applyDirectHintBtn.addEventListener('click', () => {
+function applyDirectHints() {
   if (!allCards.length) return;
   const fields = [['frameType', directFrame], ['attribute', directAttribute], ['level', directLevel], ['race', directRace], ['atk', directAtk], ['def', directDef]];
   const batchId = createBatchId('direct');
@@ -322,18 +314,23 @@ applyDirectHintBtn.addEventListener('click', () => {
         if (existing.value !== value) throw new Error(t('dynamic.statConflict', { stat: getStatNameKR(stat) }));
         continue;
       }
+      if (hints.some(hint => hint.type === 'guess' && hint.stat === stat && hint.isCorrect
+        && hint.value === value)) continue;
       additions.push({ type: 'direct', stat, value, isCorrect: true, isExact: true, batchId });
     }
     if (!additions.length) {
       showInputMessage(t('dynamic.alreadyApplied'));
       return;
     }
-    hints.push(...additions);
+    const recorded = recordDirectHints(hints, additions, hintsLeft.value);
+    hints.push(...recorded.hints);
+    hintsLeft.value = recorded.remaining;
     fields.forEach(([, input]) => { input.value = ''; });
     directDefNone.checked = false; directDef.disabled = false;
     applyFilters();
   } catch (error) { showInputMessage(error.message); }
-});
+}
+applyDirectHintBtn.addEventListener('click', applyDirectHints);
 
 if (directDefNone) {
   directDefNone.addEventListener('change', (e) => {
@@ -349,10 +346,19 @@ if (directDefNone) {
 // ------------------------------------------------------------------
 // SEARCH & SELECT (GUESS INPUT)
 // ------------------------------------------------------------------
+let activeSearchIndex = -1;
+function closeSearch() {
+  searchDropdown.classList.add('hidden');
+  searchInput.setAttribute('aria-expanded', 'false');
+  searchInput.removeAttribute('aria-activedescendant');
+  activeSearchIndex = -1;
+}
 searchInput.addEventListener('input', (e) => {
+  activeSearchIndex = -1;
+  searchInput.removeAttribute('aria-activedescendant');
   const q = e.target.value.toLowerCase().trim();
   if (q.length < 2) {
-    searchDropdown.classList.add('hidden');
+    closeSearch();
     return;
   }
   
@@ -367,6 +373,9 @@ searchInput.addEventListener('input', (e) => {
     results.forEach(card => {
       const div = document.createElement('div');
       div.className = 'dropdown-item';
+      div.id = `search-card-${card.id}`;
+      div.setAttribute('role', 'option');
+      div.setAttribute('aria-selected', 'false');
       
       const imgUrl = escapeHTML(card.image_url || '');
       const statsHTML = renderCardStatsHTML(card);
@@ -383,20 +392,36 @@ searchInput.addEventListener('input', (e) => {
       `;
       div.onclick = () => {
         selectCard(card);
-        searchDropdown.classList.add('hidden');
+        closeSearch();
         searchInput.value = '';
       };
       searchDropdown.appendChild(div);
     });
     searchDropdown.classList.remove('hidden');
+    searchInput.setAttribute('aria-expanded', 'true');
   } else {
-    searchDropdown.classList.add('hidden');
+    closeSearch();
   }
+});
+searchInput.addEventListener('keydown', event => {
+  if (event.key === 'Escape') { closeSearch(); return; }
+  if (searchDropdown.classList.contains('hidden')) return;
+  const options = [...searchDropdown.querySelectorAll('[role="option"]')];
+  if (event.key === 'Enter' && activeSearchIndex >= 0) {
+    event.preventDefault(); options[activeSearchIndex]?.click(); return;
+  }
+  if (!['ArrowDown', 'ArrowUp'].includes(event.key) || !options.length) return;
+  event.preventDefault();
+  activeSearchIndex = event.key === 'ArrowDown' ? (activeSearchIndex + 1) % options.length
+    : (activeSearchIndex < 0 ? options.length - 1 : (activeSearchIndex - 1 + options.length) % options.length);
+  options.forEach((option, index) => option.setAttribute('aria-selected', String(index === activeSearchIndex)));
+  searchInput.setAttribute('aria-activedescendant', options[activeSearchIndex].id);
+  options[activeSearchIndex].scrollIntoView({ block: 'nearest' });
 });
 
 document.addEventListener('click', (e) => {
   if (!searchDropdown.contains(e.target) && e.target !== searchInput) {
-    searchDropdown.classList.add('hidden');
+    closeSearch();
   }
 });
 
@@ -434,6 +459,7 @@ function selectCard(card) {
   statusToggles.forEach(btn => {
     btn.classList.remove('active');
     btn.dataset.selected = "false";
+    btn.setAttribute('aria-pressed', 'false');
   });
   judgmentProgress.textContent = '0 / 6';
   applyGuessBtn.disabled = true;
@@ -453,9 +479,11 @@ statusToggles.forEach(btn => {
     parent.querySelectorAll('.btn-toggle').forEach(b => {
       b.classList.remove('active');
       b.dataset.selected = "false";
+      b.setAttribute('aria-pressed', 'false');
     });
     btn.classList.add('active');
     btn.dataset.selected = "true";
+    btn.setAttribute('aria-pressed', 'true');
     refreshMatchedInputs();
   });
 });
@@ -535,17 +563,22 @@ applyGuessBtn.addEventListener('click', () => {
 function applyFilters() {
   showInputMessage('');
   candidates = filterCandidatesByHints(allCards, hints);
-  candidateLimit = 48;
+  candidateLimit = CANDIDATE_PAGE_SIZE;
   cancelCalculation();
   calculatedResults = null;
   const twoTurnButton = recCriteriaGroup.querySelector('[data-criteria="twoShot"]');
   twoTurnButton.disabled = true;
   twoTurnButton.title = t('dynamic.criteriaPending');
+  const horizonButton = recCriteriaGroup.querySelector('[data-criteria="horizon"]');
+  horizonButton.disabled = true;
+  horizonButton.textContent = t('criteria.horizon');
+  horizonButton.title = t('dynamic.criteriaPending');
   updateUI();
   recContainer.classList.add('hidden');
   snipeList.innerHTML = '';
   scoutList.innerHTML = '';
   strategyMsg.innerHTML = initialStrategyHTML();
+  strategyMsg.classList.remove('guaranteed-result');
   persistSession();
   updateHintStrategy(false);
 }
@@ -610,6 +643,7 @@ const criteriaDescriptions = {
   minimax: `<strong>${t('criteria.minimax')}:</strong> ${t('criteriaDesc.minimax')}`,
   oneShot: `<strong>${t('criteria.oneShot')}:</strong> ${t('criteriaDesc.oneShot')}`,
   twoShot: `<strong>${t('criteria.twoShot')}:</strong> ${t('criteriaDesc.twoShot')}`,
+  horizon: `<strong>${t('criteria.horizon')}:</strong> ${t('criteriaDesc.horizon')}`,
   expected: `<strong>${t('criteria.expected')}:</strong> ${t('criteriaDesc.expected')}`
 };
 criteriaDesc.innerHTML = criteriaDescriptions[activeCriteria];
@@ -624,6 +658,7 @@ function updateCriteriaUI(criteria) {
     } else {
       btn.classList.remove('active');
     }
+    btn.setAttribute('aria-pressed', String(btn.dataset.criteria === criteria));
   });
   
   // Update description
@@ -652,17 +687,16 @@ function updateCriteriaUI(criteria) {
 function sortRecommendations(list, criteria) { return sortScores(list, criteria); }
 
 function getRecommendationLimit(container) {
-  const width = container.clientWidth || container.parentElement?.clientWidth || 0;
-  if (!width) return 1;
-  const minimumCardWidth = 140;
-  const gap = 12;
-  return Math.max(1, Math.min(5, Math.floor((width + gap) / (minimumCardWidth + gap))));
+  // Both lists use the same responsive grid. Keep its reserved columns even
+  // when fewer recommendations exist, so individual cards retain their width.
+  const columns = getComputedStyle(container).gridTemplateColumns;
+  if (!columns || columns === 'none') return 1;
+  return Math.max(1, Math.min(5, columns.split(/\s+/).filter(Boolean).length));
 }
 
 function renderRecommendationList(list, container) {
   container.innerHTML = '';
   const visibleCount = Math.min(getRecommendationLimit(container), list.length);
-  container.style.setProperty('--recommendation-columns', Math.max(1, visibleCount));
   list.slice(0, visibleCount).forEach(item => {
     const card = item.card;
     const div = document.createElement('div');
@@ -675,10 +709,12 @@ function renderRecommendationList(list, container) {
     const minimaxText = `${t('dynamic.worst')}: ${t('common.cardCount', { count: item.minimax })}`;
     const oneShotText = `${t('dynamic.immediateWin')}: ${(item.oneShotProb * 100).toFixed(2)}%`;
     const twoShotText = item.twoShotProb === null ? '' : `${t('dynamic.twoWin')}: ${(item.twoShotProb * 100).toFixed(2)}%`;
+    const horizonText = item.horizonProb == null ? t('dynamic.notEvaluated')
+      : `${t('dynamic.horizonWin', { count: calculatedResults.horizonDepth })}: ${(item.horizonProb * 100).toFixed(2)}%${calculatedResults.horizonExact ? '' : ` (${t('dynamic.estimate')})`}`;
     const primaryText = activeCriteria === 'entropy' ? entropyText
       : activeCriteria === 'minimax' ? minimaxText
         : activeCriteria === 'oneShot' ? oneShotText
-          : activeCriteria === 'twoShot' ? twoShotText : expectedText;
+          : activeCriteria === 'twoShot' ? twoShotText : activeCriteria === 'horizon' ? horizonText : expectedText;
     const secondaryText = activeCriteria === 'oneShot'
       ? expectedText
       : item.oneShotProb > 0 ? oneShotText : '';
@@ -690,7 +726,7 @@ function renderRecommendationList(list, container) {
       <div class="recommendation-primary">${primaryText}</div>
       ${secondaryText && secondaryText !== primaryText ? `<div class="recommendation-secondary">${secondaryText}</div>` : ''}
     `;
-    div.onclick = () => selectCard(card);
+    makeCardInteractive(div, () => selectCard(card));
     container.appendChild(div);
   });
 }
@@ -700,6 +736,8 @@ function renderRecommendations() {
 
   const sortedSnipes = distinctScores(calculatedResults.snipes, activeCriteria);
   const sortedScouts = distinctScores(calculatedResults.scouts, activeCriteria);
+  const guaranteed = calculatedResults.snipes.some(score => score.oneShotProb >= 1 - 1e-10);
+  document.getElementById('scoutSection').hidden = guaranteed || budget(totalAttemptsLeft.value) <= 1 || !sortedScouts.length;
   
   renderRecommendationList(sortedSnipes, snipeList);
   renderRecommendationList(sortedScouts, scoutList);
@@ -734,6 +772,8 @@ if ('ResizeObserver' in window) {
 recCriteriaGroup.addEventListener('click', (e) => {
   const btn = e.target.closest('.btn-toggle');
   if (btn) {
+    if (btn.disabled) return;
+    manualCriteria = true;
     updateCriteriaUI(btn.dataset.criteria);
   }
 });
@@ -754,10 +794,13 @@ function hydrateSolverResult(result) {
   return { ...result, snipes: result.snipes.map(hydrate), scouts: result.scouts.map(hydrate) };
 }
 
-calcRecBtn.addEventListener('click', () => {
+function calculateRecommendations() {
   if (!candidates.length || hasSolvedGuess(hints)) return;
+  manualCriteria = false;
+  updateHintStrategy(true);
   cancelCalculation();
   const id = calculationId;
+  calculationBudget = Math.min(4, Math.max(1, allocateAttempts(budget(totalAttemptsLeft.value), budget(problemsLeft.value, 1))));
   calcRecBtn.disabled = true;
   calcRecBtn.textContent = t('main.calculating');
   try {
@@ -775,6 +818,11 @@ calcRecBtn.addEventListener('click', () => {
       const twoTurnButton = recCriteriaGroup.querySelector('[data-criteria="twoShot"]');
       twoTurnButton.disabled = !calculatedResults.twoTurnExact;
       twoTurnButton.title = calculatedResults.twoTurnExact ? '' : t('dynamic.criteriaLimit', { count: TWO_TURN_LIMIT });
+      const horizonButton = recCriteriaGroup.querySelector('[data-criteria="horizon"]');
+      horizonButton.disabled = calculatedResults.horizonDepth < 3;
+      horizonButton.textContent = calculatedResults.horizonDepth >= 3
+        ? t('dynamic.horizonWin', { count: calculatedResults.horizonDepth }) : t('criteria.horizon');
+      horizonButton.title = calculatedResults.horizonDepth < 3 ? t('dynamic.horizonLimit') : '';
       updateHintStrategy(true);
       renderRecommendations();
     };
@@ -786,22 +834,36 @@ calcRecBtn.addEventListener('click', () => {
     solverWorker.postMessage({ type: 'solve', id, request: {
       candidateIds: candidates.map(card => card.id),
       guessedIds: [...new Set(hints.filter(hint => hint.type === 'guess').map(hint => hint.cardId))],
-      revealedStats: [...new Set(hints.filter(hint => hint.isCorrect).map(hint => hint.stat))]
+      revealedStats: [...new Set(hints.filter(hint => hint.isCorrect).map(hint => hint.stat))],
+      attempts: calculationBudget
     } });
   } catch (error) { cancelCalculation(); strategyMsg.textContent = t('dynamic.calcFailed', { error: error.message }); }
-});
+}
+calcRecBtn.addEventListener('click', calculateRecommendations);
 
 function updateHintStrategy(autoSelect = false) {
   const attempts = budget(totalAttemptsLeft.value);
   const remainingHints = budget(hintsLeft.value);
   const problems = budget(problemsLeft.value, 1);
   const currentBudget = allocateAttempts(attempts, problems);
-  const recommended = chooseCriteria({ attempts: currentBudget, twoTurnExact: calculatedResults?.twoTurnExact, candidateCount: candidates.length });
-  if (autoSelect || (activeCriteria === 'twoShot' && !calculatedResults?.twoTurnExact)) {
+  const guaranteed = calculatedResults?.snipes.some(score => score.oneShotProb >= 1 - 1e-10);
+  const recommended = guaranteed ? 'oneShot' : chooseCriteria({ attempts: currentBudget, twoTurnExact: calculatedResults?.twoTurnExact,
+    horizonDepth: calculatedResults?.horizonDepth, candidateCount: candidates.length });
+  const unavailable = (activeCriteria === 'twoShot' && !calculatedResults?.twoTurnExact)
+    || (activeCriteria === 'horizon' && !(calculatedResults?.horizonDepth >= 3));
+  if ((autoSelect && !manualCriteria) || unavailable) {
     activeCriteria = recommended;
-    recCriteriaGroup.querySelectorAll('.btn-toggle').forEach(button => button.classList.toggle('active', button.dataset.criteria === activeCriteria));
+    if (unavailable) manualCriteria = false;
+    recCriteriaGroup.querySelectorAll('.btn-toggle').forEach(button => {
+      button.classList.toggle('active', button.dataset.criteria === activeCriteria);
+      button.setAttribute('aria-pressed', String(button.dataset.criteria === activeCriteria));
+    });
     criteriaDesc.innerHTML = criteriaDescriptions[activeCriteria];
+    criteriaDesc.style.borderLeftColor = activeCriteria === 'minimax' ? '#ef4444'
+      : activeCriteria === 'oneShot' ? '#22c55e' : 'var(--accent-blue)';
   }
+  document.getElementById('autoCriteriaReason').textContent = manualCriteria ? t('dynamic.manualCriteria')
+    : t('dynamic.autoCriteriaReason', { attempts, problems, criterion: t(`criteria.${activeCriteria}`), count: Math.min(4, currentBudget) });
   const messages = [];
   if (hasSolvedGuess(hints) && candidates.length) {
     calcRecBtn.disabled = true;
@@ -812,11 +874,16 @@ function updateHintStrategy(autoSelect = false) {
   else if (candidates.length === 1) messages.push(t('dynamic.oneCandidate', { card: escapeHTML(localizeCardName(candidates[0])) }));
   else if (!calculatedResults) messages.push(t('dynamic.calculatePrompt', { count: candidates.length }));
   else {
-    const best = sortScores([...calculatedResults.snipes, ...calculatedResults.scouts], activeCriteria)[0];
-    if (best) messages.push(t(best.twoShotProb === null ? 'dynamic.bestOneShotCompact' : 'dynamic.bestCompact', {
+    const best = guaranteed ? sortScores(calculatedResults.snipes, 'oneShot')[0]
+      : sortScores([...calculatedResults.snipes, ...calculatedResults.scouts], activeCriteria)[0];
+    if (best?.oneShotProb >= 1 - 1e-10) messages.push(t('dynamic.guaranteed', { card: `<strong>${escapeHTML(localizeCardName(best.card))}</strong>` }));
+    else if (best) messages.push(t(activeCriteria === 'horizon' ? 'dynamic.bestHorizonCompact' : best.twoShotProb === null ? 'dynamic.bestOneShotCompact' : 'dynamic.bestCompact', {
       card: `<strong>${escapeHTML(localizeCardName(best.card))}</strong>`,
       oneShot: `${(best.oneShotProb * 100).toFixed(2)}%`,
-      twoShot: `${((best.twoShotProb ?? 0) * 100).toFixed(2)}%`
+      twoShot: `${((best.twoShotProb ?? 0) * 100).toFixed(2)}%`,
+      count: calculatedResults.horizonDepth,
+      probability: `${((best.horizonProb ?? 0) * 100).toFixed(2)}%`,
+      estimate: calculatedResults.horizonExact ? '' : ` (${t('dynamic.estimate')})`
     }));
     // Hint value is measured for the current candidate state. Future challenge
     // count raises the scarcity threshold; it never assigns one hint per problem.
@@ -834,26 +901,34 @@ function updateHintStrategy(autoSelect = false) {
         expected: calculatedResults.hint.expectedRemaining.toFixed(1),
         before: `${(hintAdvice.currentOneShotProb * 100).toFixed(2)}%`,
         after: `${(hintAdvice.expectedOneShotProb * 100).toFixed(2)}%`,
-        gain: (hintAdvice.oneShotGain * 100).toFixed(2)
+        gain: (hintAdvice.oneShotGain * 100).toFixed(2),
+        horizonCount: hintAdvice.evaluationDepth ?? calculatedResults.horizonDepth,
+        solveGain: ((hintAdvice.solveGain ?? 0) * 100).toFixed(1),
+        saved: (hintAdvice.attemptsSaved ?? 0).toFixed(2),
+        value: (hintAdvice.opportunityCost ?? 0).toFixed(2)
       };
       if (hintAdvice.decision === 'use') messages.push(`<strong>${t('dynamic.hintUseCompact', values)}</strong>`);
       else if (hintAdvice.reason === 'noAttempts') messages.push(t('dynamic.hintSaveNoAttempts'));
       else if (hintAdvice.reason === 'scarceResource') messages.push(t('dynamic.hintSaveScarce', values));
       else messages.push(t('dynamic.hintSaveCompact', values));
+      if (hintAdvice.evaluationDepth >= 2) messages.push(t('dynamic.hintResourceValue', values));
     }
   }
   strategyMsg.innerHTML = messages.map((message, index) => `<p class="${index === 0 ? 'strategy-result' : 'strategy-advice'}">${message}</p>`).join('');
+  strategyMsg.classList.toggle('guaranteed-result', calculatedResults?.snipes.some(score => score.oneShotProb >= 1 - 1e-10) ?? false);
 }
 
 for (const input of [totalAttemptsLeft, hintsLeft, problemsLeft]) {
   input.addEventListener('change', () => {
     input.value = budget(input.value, input === problemsLeft ? 1 : 0);
     persistSession(); updateHintStrategy(true);
-    if (calculatedResults) renderRecommendations();
+    const nextBudget = Math.min(4, Math.max(1, allocateAttempts(budget(totalAttemptsLeft.value), budget(problemsLeft.value, 1))));
+    if ((calculatedResults || solverWorker) && calculationBudget !== nextBudget) calculateRecommendations();
+    else if (calculatedResults) renderRecommendations();
   });
 }
-document.getElementById('candidateSearch').addEventListener('input', () => { candidateLimit = 48; renderCandidatePage(); });
-document.getElementById('showMoreCandidates').addEventListener('click', () => { candidateLimit += 48; renderCandidatePage(); });
+document.getElementById('candidateSearch').addEventListener('input', () => { candidateLimit = CANDIDATE_PAGE_SIZE; renderCandidatePage(); });
+document.getElementById('showMoreCandidates').addEventListener('click', () => { candidateLimit += CANDIDATE_PAGE_SIZE; renderCandidatePage(); });
 
 if (updateDbBtn) {
   updateDbBtn.addEventListener('click', async () => {
