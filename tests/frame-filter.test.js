@@ -72,7 +72,7 @@ test('R-Genex Turing O/X input matches the observed in-game count', () => {
     cardId: guess.id,
     batchId: 'r-genex-turing'
   }));
-  const hints = applyAutomaticMatches(batch, [guess]);
+  const hints = applyAutomaticMatches(batch, [guess], { revealedFrames: { 'r-genex-turing': 'effect' } });
   assert.ok(filterCandidatesByHints(monsters, hints).length >= 18);
 });
 

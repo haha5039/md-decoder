@@ -239,15 +239,34 @@ test('next challenge preserves resources and decreases remaining problems', () =
   assert.equal(nextChallenge({ attempts: 0, remainingHints: 0, problems: 1 }).problems, 1);
 });
 
-test('matching frame and level are applied automatically', () => {
+test('only level is automatic; a frame match does not invent an exact frame', () => {
   const card = { ...api, id: 7, frameType: 'effect', level: 2 };
   const batch = [
     { type: 'guess', stat: 'frameType', value: 'effect', isCorrect: true, cardId: 7, batchId: 'g' },
     { type: 'guess', stat: 'level', value: [2], isCorrect: true, cardId: 7, batchId: 'g' }
   ];
   const completed = applyAutomaticMatches(batch, [card]);
-  assert.ok(completed.some(hint => hint.supplemental && hint.stat === 'frameType' && hint.value === 'effect'));
+  assert.equal(completed.some(hint => hint.type === 'direct' && hint.stat === 'frameType'), false);
   assert.ok(completed.some(hint => hint.supplemental && hint.stat === 'level' && hint.value === 2));
+});
+
+test('restoring a session drops generated frame assumptions and retains actual revealed frames', () => {
+  const stored = { hints: [
+    { type: 'guess', stat: 'frameType', value: 'effect', isCorrect: true, cardId: 1, batchId: 'old' },
+    { type: 'direct', stat: 'frameType', value: 'effect', isCorrect: true, supplemental: true, automatic: true, batchId: 'old' },
+    { type: 'direct', stat: 'frameType', value: 'effect_pendulum', isCorrect: true, supplemental: true, source: 'judgment', hintCost: 0, batchId: 'real' }
+  ], attempts: 3, remainingHints: 1, problems: 1 };
+  const restored = restoreSession({ getItem: () => JSON.stringify(stored) }, [api]);
+  assert.equal(restored.hints.length, 2); assert.equal(restored.migrated, true);
+  assert.equal(restored.hints[1].value, 'effect_pendulum');
+  assert.equal(restored.remainingHints, 1);
+});
+
+test('correcting an already revealed frame is free and does not consume the initial hint allowance', () => {
+  const revealed = { ...direct('frameType', 'effect_pendulum', 'guess'), source: 'judgment', supplemental: true };
+  const recorded = recordDirectHints([], [revealed], 1);
+  assert.equal(recorded.cost, 0); assert.equal(recorded.remaining, 1);
+  assert.equal(initialHintAvailable(recorded.hints), true);
 });
 
 test('filter options follow the requested in-game order', () => {

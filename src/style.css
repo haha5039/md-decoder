@@ -604,6 +604,22 @@ button {
   border-left: 3px solid var(--accent-gold);
   color: var(--text-main);
 }
+.hint-advice {
+  margin: 0.6rem 0;
+  padding: 0.75rem 0.85rem;
+  border-left: 3px solid var(--accent-gold);
+  border-radius: 7px;
+  background: rgba(251, 191, 36, 0.08);
+  color: var(--text-main);
+  font-size: 0.85rem;
+  line-height: 1.55;
+}
+.hint-advice > p { margin: 0.35rem 0 0; }
+.hint-advice .hint-metrics { color: var(--text-muted); font-size: 0.8rem; }
+.status-row.frame-result-row { display: flex; flex-direction: column; align-items: stretch; gap: 0.45rem; }
+.frame-result-choices { display: grid; grid-template-columns: repeat(var(--frame-choice-columns,2),minmax(0,1fr)); gap: 0.4rem; }
+.frame-result-choices .btn-toggle { min-height: 42px; padding: 0.5rem; font-size: 0.85rem; white-space: normal; }
+#frameResultNote { color: var(--text-muted); font-size: 0.75rem; line-height: 1.45; }
 
 .recommendation-primary {
   margin-top: 0.45rem;

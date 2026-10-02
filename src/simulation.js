@@ -35,7 +35,9 @@ export function simulateScenario(cards, solve, { target, initialStat }, criteria
     const feedback = getGuessFeedback(guess, target);
     if (feedback.won) return { success: true, eliminated: false, attempts: attempt, durationMs };
     const judgmentHints = hintsFromFeedback(guess, feedback, String(attempt)).filter(hint => hint.type === 'guess');
-    hints.push(...applyAutomaticMatches(judgmentHints, [guess]));
+    hints.push(...applyAutomaticMatches(judgmentHints, [guess], {
+      revealedFrames: feedback.matches.frameType ? { [String(attempt)]: feedback.revealed.frameType } : {}
+    }));
   }
   return { success: false, eliminated: false, attempts: limit, durationMs };
 }

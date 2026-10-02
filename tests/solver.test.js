@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { allocateAttempts, chooseCriteria, createSolver, distinctScores, recommendHintUse, sortScores } from '../src/solver.js';
-import { getGuessFeedback, getValidLevels, getTargetRulesLevel, filterCandidatesByHints, hintsFromFeedback } from '../src/utils.js';
+import { getGuessFeedback, getValidLevels, getTargetRulesLevel, filterCandidatesByHints, hintsFromFeedback, STAT_KEYS } from '../src/utils.js';
 import { allCards } from '../src/cards_data.js';
 
 const card = (id, extra = {}) => ({ id, name: `Card ${id}`, frameType: 'effect', level: 4, attribute: 'DARK', race: 'Dragon', atk: 1000, def: 1000, ...extra });
@@ -13,10 +13,9 @@ function reference(guess, targets, guesses) {
   for (const target of targets) {
     const result = getGuessFeedback(guess, target);
     if (result.won) { wins++; continue; }
-    const survives = (!result.matches.frameType || target.frameType === guess.frameType)
-      && (!result.matches.level || getTargetRulesLevel(target) === getTargetRulesLevel(guess));
+    const survives = !result.matches.level || getTargetRulesLevel(target) === getTargetRulesLevel(guess);
     if (!survives) { eliminated++; continue; }
-    const key = JSON.stringify(result.matches);
+    const key = JSON.stringify([result.matches, result.matches.frameType ? target.frameType : null]);
     if (!buckets.has(key)) buckets.set(key, []);
     buckets.get(key).push(target);
   }
@@ -36,11 +35,11 @@ test('two distinct targets: 50% now, 100% within two submissions', () => {
   for (const score of result.snipes) { close(score.oneShotProb, 0.5); close(score.twoShotProb, 1); }
 });
 
-test('identical O/X outcomes stay in one result branch', () => {
+test('identical O/X outcomes split when different full frames are revealed', () => {
   const cards = [card(1, { frameType: 'fusion', atk: 0 }), card(2, { frameType: 'fusion' }), card(3, { frameType: 'fusion_pendulum' })];
   const result = createSolver(cards)({ candidateIds: [2, 3] });
   const score = result.scouts.find(score => score.card.id === 1);
-  close(score.entropy, 1); close(score.expectedRemaining, 1.5); close(score.twoShotProb, 0.5); close(score.eliminationProb, 0.5);
+  close(score.entropy, 1); close(score.expectedRemaining, 1); close(score.twoShotProb, 1); close(score.eliminationProb, 0);
 });
 
 test('optimized metrics equal exhaustive reference including duplicates and Pendulum overlaps', () => {
@@ -161,7 +160,90 @@ test('routine early-game narrowing does not spend a scarce daily hint', () => {
   const early = { unknownCount: 5, expectedRemaining: 3000, currentOneShotProb: 0.001, expectedOneShotProb: 0.006, oneShotGain: 0.005 };
   const advice = recommendHintUse({ attempts: 4, remainingHints: 1, problemsLeft: 8, candidateCount: 6000, hint: early, bestGuessExpectedRemaining: 500 });
   assert.equal(advice.decision, 'save');
-  assert.equal(advice.reason, 'scarceResource');
+  assert.equal(advice.reason, 'firstJudgment');
+  assert.equal(recommendHintUse({ attempts: 4, remainingHints: 1, problemsLeft: 8, candidateCount: 6000,
+    hint: early, bestGuessExpectedRemaining: 500, guessedCount: 1 }).reason, 'scarceResource');
+});
+
+test('observed effect and fusion starts conserve one hint until the first judgment', () => {
+  const solve = createSolver(allCards);
+  for (const frame of ['effect', 'fusion']) {
+    const candidates = filterCandidatesByHints(allCards, [{ type: 'direct', stat: 'frameType', value: frame, isCorrect: true }]);
+    const result = solve({ candidateIds: candidates.map(item => item.id), revealedStats: ['frameType'], attempts: 4 });
+    const advice = recommendHintUse({ attempts: 4, remainingHints: 1, problemsLeft: 1,
+      candidateCount: candidates.length, hint: result.hint, bestGuessExpectedRemaining: result.bestGuessExpectedRemaining });
+    assert.equal(advice.decision, 'save'); assert.equal(advice.reason, 'firstJudgment');
+  }
+});
+
+test('hint timing equals an independent two-turn enumeration with conditional hint use', () => {
+  const profiles = [[3,1,2,0],[2,0,2,2],[3,0,2,0],[3,1,2,2],[2,0,3,1],
+    [1,1,1,2],[3,1,3,2],[3,1,0,2],[1,1,3,1],[3,0,0,1]];
+  const cards = profiles.map(([level, race, atk, def], i) => card(i + 1, { level,
+    race: ['Dragon', 'Warrior'][race], atk: atk * 1000, def: def * 1000 }));
+  const revealed = ['frameType', 'attribute'];
+  const unknown = STAT_KEYS.filter(stat => !revealed.includes(stat));
+  const result = createSolver(cards)({ candidateIds: cards.map(item => item.id), revealedStats: revealed, attempts: 2 });
+  const first = sortScores([...result.snipes, ...result.scouts], 'twoShot')[0].card;
+  const buckets = (targets, key) => {
+    const values = new Map();
+    for (const target of targets) {
+      const value = key(target);
+      if (!values.has(value)) values.set(value, []);
+      values.get(value).push(target);
+    }
+    return [...values.values()];
+  };
+  const winningCount = targets => Math.max(...cards.map(guess => targets.filter(target => getGuessFeedback(guess, target).won).length));
+  const noHintTwo = targets => {
+    let wins = -1, spent = Infinity;
+    for (const guess of cards) {
+      const direct = targets.filter(target => getGuessFeedback(guess, target).won).length;
+      const branches = buckets(targets.filter(target => !getGuessFeedback(guess, target).won),
+        target => JSON.stringify(getGuessFeedback(guess, target).matches));
+      const solved = direct + branches.reduce((sum, branch) => sum + winningCount(branch), 0);
+      const cost = 2 * targets.length - direct;
+      if (solved > wins || (solved === wins && cost < spent)) { wins = solved; spent = cost; }
+    }
+    return { wins, spent };
+  };
+  let nowWins = 0, nowSpent = 0;
+  for (const stat of unknown) for (const bucket of buckets(cards, target => target[stat])) {
+    const outcome = noHintTwo(bucket); nowWins += outcome.wins / unknown.length; nowSpent += outcome.spent / unknown.length;
+  }
+  const direct = cards.filter(target => getGuessFeedback(first, target).won).length;
+  let waitWins = direct, waitHints = 0;
+  for (const branch of buckets(cards.filter(target => !getGuessFeedback(first, target).won),
+    target => JSON.stringify(getGuessFeedback(first, target).matches))) {
+    const feedback = getGuessFeedback(first, branch[0]);
+    const remaining = unknown.filter(stat => !feedback.matches[stat]);
+    const plain = winningCount(branch);
+    const withHint = remaining.length ? remaining.reduce((sum, stat) => sum +
+      buckets(branch, target => target[stat]).reduce((count, bucket) => count + winningCount(bucket), 0), 0) / remaining.length : plain;
+    waitWins += Math.max(plain, withHint);
+    if (withHint > plain) waitHints += branch.length;
+  }
+  const timing = result.hint.timing;
+  assert.equal(timing.exact, true);
+  close(timing.nowProb, nowWins / cards.length); close(timing.nowAttempts, nowSpent / cards.length);
+  close(timing.waitProb, waitWins / cards.length); close(timing.waitAttempts, 2 - direct / cards.length);
+  close(timing.waitHints, waitHints / cards.length);
+  assert.ok(timing.waitProb > timing.nowProb);
+  const advice = recommendHintUse({ attempts: 2, remainingHints: 1, problemsLeft: 1,
+    candidateCount: cards.length, hint: result.hint, bestGuessExpectedRemaining: result.bestGuessExpectedRemaining });
+  assert.equal(advice.reason, 'waitForJudgment');
+});
+
+test('the last attempt on the final challenge uses even a modest helpful hint', () => {
+  const hint = { unknownCount: 3, expectedRemaining: 80, currentOneShotProb: 0.01, expectedOneShotProb: 0.011, oneShotGain: 0.001 };
+  const advice = recommendHintUse({ attempts: 1, remainingHints: 1, problemsLeft: 1, candidateCount: 100, hint });
+  assert.equal(advice.decision, 'use'); assert.equal(advice.reason, 'protectLastAttempt');
+});
+
+test('a substantial measured success gain can justify a hint before the first judgment', () => {
+  const hint = { unknownCount: 3, expectedRemaining: 3, currentOneShotProb: 0.05, expectedOneShotProb: 0.5,
+    oneShotGain: 0.45, evaluationDepth: 2, currentSolveProb: 0.5, expectedSolveProb: 1, solveGain: 0.5, attemptsSaved: 0.3 };
+  assert.equal(recommendHintUse({ attempts: 2, remainingHints: 1, problemsLeft: 1, candidateCount: 20, hint }).decision, 'use');
 });
 
 test('known rules exceptions use correct identities and retain printed zero', () => {

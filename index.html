@@ -211,7 +211,7 @@
             <h3 style="font-size: 0.95rem; margin-bottom: 0.5rem; border-bottom: 1px solid var(--panel-border); padding-bottom: 0.4rem; color: var(--text-main); display: flex; align-items: center; gap: 0.3rem;">
               <span>🧪</span> <span data-i18n="main.guessTitle">2. 인게임 도전 결과 (오답 소거)</span>
             </h3>
-            <p class="hint-desc" data-i18n="main.guessDesc" style="margin-bottom: 0.75rem;">카드를 선택하고 인게임에 표시된 6개 항목의 O/X만 기록하세요.</p>
+            <p class="hint-desc" data-i18n="main.guessDesc" style="margin-bottom: 0.75rem;">프레임은 게임에 표시된 결과를 선택하고, 나머지 5개 항목은 O/X를 기록하세요.</p>
             <div class="search-container">
               <input type="text" id="cardSearch" aria-label="카드 이름 검색" data-i18n-aria-label="main.cardSearchLabel" role="combobox" aria-autocomplete="list" aria-controls="searchDropdown" aria-expanded="false" placeholder="카드 이름 검색 (한글/영어 가능)..." data-i18n-placeholder="main.searchPlaceholder" autocomplete="off" style="padding: 0.65rem 1rem; font-size: 0.95rem; border-radius: 8px;">
               <div id="searchDropdown" class="dropdown hidden" role="listbox" aria-label="검색 결과" data-i18n-aria-label="main.searchResults"></div>
@@ -229,16 +229,14 @@
               <div style="height: 1px; background: var(--border); margin: 0.5rem 0;"></div>
 
               <h4 style="font-size: 0.8rem; color: var(--accent-gold); margin-bottom: 0.4rem; display: flex; align-items: center; gap: 0.25rem;">
-                <span>📊</span> <span data-i18n="main.judgmentTitle">판정 결과 O/X 체크</span> <span id="judgmentProgress" class="badge" aria-live="polite">0 / 6</span>
+                <span>📊</span> <span data-i18n="main.judgmentTitle">판정 결과 기록</span> <span id="judgmentProgress" class="badge" aria-live="polite">0 / 6</span>
               </h4>
               <div class="status-toggles" style="gap: 0.4rem; margin-top: 0;">
                 <!-- frameType -->
-                <div class="status-row" data-stat="frameType" style="padding: 0.5rem 0.75rem;">
+                <div class="status-row frame-result-row" data-stat="frameType" style="padding: 0.5rem 0.75rem;">
                   <span data-i18n="stats.frameType" style="font-size: 0.85rem; font-weight: 600;">카드 프레임</span>
-                  <div class="toggle-group">
-                    <button class="btn-toggle btn-correct" data-val="correct" data-i18n="main.correct" style="padding: 0.45rem 0.75rem; font-size: 0.85rem; border-radius: 8px; font-weight: bold; min-width: 72px;">O (맞음)</button>
-                    <button class="btn-toggle btn-wrong" data-val="wrong" data-i18n="main.wrong" style="padding: 0.45rem 0.75rem; font-size: 0.85rem; border-radius: 8px; font-weight: bold; min-width: 72px;">X (틀림)</button>
-                  </div>
+                  <div id="frameResultChoices" class="toggle-group frame-result-choices"></div>
+                  <small id="frameResultNote" aria-live="polite"></small>
                 </div>
                 <!-- attribute -->
                 <div class="status-row" data-stat="attribute" style="padding: 0.5rem 0.75rem;">

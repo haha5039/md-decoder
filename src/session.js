@@ -1,4 +1,4 @@
-import { STAT_KEYS, getTargetRulesLevel } from './utils.js';
+import { STAT_KEYS, getTargetRulesLevel, isFrameMatch } from './utils.js';
 import { t } from './i18n.js';
 const SESSION_KEY = 'md-decoder-session-v1';
 let batchSequence = 0;
@@ -28,6 +28,9 @@ export function recordDirectHints(hints, additions, remainingHints, { bonus = fa
   let remaining = budget(remainingHints);
   let free = initialHintAvailable(hints);
   const recorded = additions.map(hint => {
+    if (hint.stat === 'frameType' && hint.source === 'judgment' && hint.supplemental) {
+      return { ...hint, hintKind: 'revealed', hintCost: 0 };
+    }
     const hintKind = bonus ? 'bonus' : free ? 'initial' : 'paid';
     if (!bonus) free = false;
     const hintCost = hintKind === 'paid' && remaining > 0 ? 1 : 0;
@@ -61,7 +64,8 @@ export function restoreSession(storage, cards) {
     if (!saved || !Array.isArray(saved.hints) || saved.hints.length > 500) return null;
     // Older versions invented exact values from partial frame/level matches.
     // Remove only generated constraints; retain user-entered values and input order.
-    const hints = saved.hints.filter(hint => hint?.inferred !== true);
+    const hints = saved.hints.filter(hint => hint?.inferred !== true
+      && !(hint?.type === 'direct' && hint.stat === 'frameType' && hint.automatic === true));
     const ids = new Set(cards.map(card => card.id));
     for (const hint of hints) {
       if (!hint || !['guess', 'direct'].includes(hint.type) || !STAT_KEYS.includes(hint.stat) || typeof hint.isCorrect !== 'boolean' || typeof hint.batchId !== 'string' || !hint.batchId) return null;
@@ -93,9 +97,9 @@ export function nextChallenge(state) {
   return { hints: [], attempts: budget(state.attempts), remainingHints: budget(state.remainingHints), problems: Math.max(1, budget(state.problems, 1) - 1) };
 }
 
-export function applyAutomaticMatches(hints, cards) {
+export function applyAutomaticMatches(hints, cards, { revealedFrames = {} } = {}) {
   const cardById = new Map(cards.map(card => [card.id, card]));
-  const result = [...hints];
+  const result = hints.filter(hint => !(hint.type === 'direct' && hint.stat === 'frameType' && hint.automatic === true));
   const batches = new Map();
   for (const hint of hints) {
     if (hint.type !== 'guess') continue;
@@ -105,14 +109,24 @@ export function applyAutomaticMatches(hints, cards) {
   for (const [batchId, batchHints] of batches) {
     const card = cardById.get(batchHints[0]?.cardId);
     if (!card) continue;
-    for (const stat of ['frameType', 'level']) {
+    for (const stat of ['level']) {
       if (!batchHints.some(hint => hint.stat === stat && hint.isCorrect)) continue;
       if (hints.some(hint => hint.type === 'direct' && hint.batchId === batchId && hint.stat === stat)) continue;
       result.push({
         type: 'direct', stat,
-        value: stat === 'level' ? getTargetRulesLevel(card) : card.frameType,
+        value: getTargetRulesLevel(card),
         isCorrect: true, isExact: true, supplemental: true, automatic: true, batchId
       });
+    }
+    const frame = revealedFrames[batchId];
+    if (frame !== undefined) {
+      if (!batchHints.some(hint => hint.stat === 'frameType' && hint.isCorrect) || !isFrameMatch(card, frame)) {
+        throw new Error(t('dynamic.invalidFrameResult'));
+      }
+      if (!result.some(hint => hint.type === 'direct' && hint.batchId === batchId && hint.stat === 'frameType')) {
+        result.push({ type: 'direct', stat: 'frameType', value: frame, isCorrect: true,
+          isExact: true, supplemental: true, source: 'judgment', hintCost: 0, batchId });
+      }
     }
   }
   return result;

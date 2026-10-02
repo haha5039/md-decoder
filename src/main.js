@@ -6,6 +6,8 @@ import { initializeTheme } from './theme.js';
 
 import { allocateAttempts, sortScores, distinctScores, TWO_TURN_LIMIT, chooseCriteria, recommendHintUse } from './solver.js';
 import { fetchCardManifest } from './data.js';
+import { formatHintAdvice } from './hint-advice.js';
+import { getFrameResults } from './frame-result.js';
 import { applyAutomaticMatches, budget, consumeAttempt, createBatchId, recordDirectHints, nextChallenge, parseStatInput, removeInputBatch, saveSession, restoreSession, hasSolvedGuess } from './session.js';
 
 import { getCachedCards, saveCachedCards, clearCachedCards } from './db.js'
@@ -20,6 +22,8 @@ const initialStrategyHTML = () => `
 let candidates = [];
 let hints = []; // Array of { type: 'guess'|'direct', stat, isCorrect, value, cardName }
 let selectedCard = null;
+let frameChoice = null;
+let explicitFrameChoice = false;
 let calculatedResults = null;
 let activeCriteria = 'entropy';
 let manualCriteria = false;
@@ -37,7 +41,7 @@ const selectedCardContainer = document.getElementById('selectedCardContainer');
 const selectedCardImg = document.getElementById('selectedCardImg');
 const infoName = document.getElementById('infoName');
 const infoDetails = document.getElementById('infoDetails');
-const statusToggles = document.querySelectorAll('.status-toggles .btn-toggle');
+const statusToggles = () => document.querySelectorAll('.status-toggles .btn-toggle');
 const applyGuessBtn = document.getElementById('applyGuessBtn');
 const judgmentProgress = document.getElementById('judgmentProgress');
 
@@ -167,10 +171,26 @@ function makeCardInteractive(element, action) {
 
 function renderKnownStats() {
   document.getElementById('knownStats').innerHTML = ['frameType', 'attribute', 'level', 'race', 'atk', 'def'].map(stat => {
-    const known = hints.find(hint => hint.type === 'direct' && hint.stat === stat && hint.isCorrect)
+    let known = hints.find(hint => hint.type === 'direct' && hint.stat === stat && hint.isCorrect)
       || hints.find(hint => hint.stat === stat && hint.isCorrect);
+    if (stat === 'frameType' && known?.type === 'guess') {
+      const frames = [...new Set(candidates.map(card => card.frameType))];
+      known = frames.length === 1 ? { value: frames[0] } : null;
+    }
     return `<div class="known-stat${known ? ' is-known' : ''}"><span>${getStatNameKR(stat)}</span><strong>${known ? escapeHTML(getTranslatedValue(stat, known.value)) : '?'}</strong></div>`;
   }).join('');
+}
+
+function renderCardSummary(card) {
+  const levelLabel = card.frameType === 'link' ? 'Lnk' : card.frameType.startsWith('xyz') ? 'Rk' : 'Lv';
+  const level = getTargetRulesLevel(card);
+  const badge = (stat, value, className) => `<span class="stat-badge ${className}" data-stat="${stat}" title="${escapeHTML(t(`stats.${stat}`))}">${escapeHTML(value)}</span>`;
+  return `<div class="candidate-stats">
+    <div class="candidate-stats-row">${badge('frameType', translateFrame(card.frameType), `frame-${card.frameType.toLowerCase().replace('_pendulum', '')}`)}</div>
+    <div class="candidate-stats-row">${badge('attribute', translateAttribute(card.attribute) || '—', 'attr')}${badge('level', level == null ? '—' : `${levelLabel}.${level}`, 'level')}</div>
+    <div class="candidate-stats-row">${badge('race', translateRace(card.race) || '—', 'race')}</div>
+    <div class="candidate-stats-atkdef"><span data-stat="atk" title="${escapeHTML(t('stats.atk'))}">⚔️ ${escapeHTML(formatStat(card.atk))}</span> / <span data-stat="def" title="${escapeHTML(t('stats.def'))}">🛡️ ${escapeHTML(formatStat(card.def))}</span></div>
+  </div>`;
 }
 
 function renderCandidateList(list, container) {
@@ -181,28 +201,10 @@ function renderCandidateList(list, container) {
     const imgUrl = escapeHTML(card.image_url || '');
     const displayName = localizeCardName(card);
 
-    const levelLabel = card.frameType === 'link' ? 'Lnk' : (card.frameType.startsWith('xyz') ? 'Rk' : 'Lv');
-    const lvText = getTargetRulesLevel(card) != null ? `${levelLabel}.${getTargetRulesLevel(card)}` : '';
-    const attrText = translateAttribute(card.attribute) || '';
-    const atkText = formatStat(card.atk);
-    const defText = formatStat(card.def);
-
     div.innerHTML = `
       <img src="${imgUrl}" alt="${escapeHTML(displayName)}" loading="lazy" onerror="this.onerror=null;this.style.visibility='hidden'">
       <div class="card-item-title" title="${escapeHTML(displayName)}">${escapeHTML(displayName)}</div>
-      <div class="candidate-stats">
-        <div class="candidate-stats-row">
-          <span class="stat-badge frame-${card.frameType.toLowerCase().replace('_pendulum', '')}" style="font-size: 0.65rem; padding: 0.1rem 0.35rem;">${escapeHTML(translateFrame(card.frameType))}</span>
-        </div>
-        <div class="candidate-stats-row">
-          ${attrText ? `<span class="stat-badge attr" style="font-size: 0.65rem; padding: 0.1rem 0.35rem;">${escapeHTML(attrText)}</span>` : ''}
-          ${lvText ? `<span class="stat-badge level" style="font-size: 0.65rem; padding: 0.1rem 0.35rem;">${lvText}</span>` : ''}
-        </div>
-        <div class="candidate-stats-row">
-          <span class="stat-badge race" style="font-size: 0.65rem; padding: 0.1rem 0.35rem;">${escapeHTML(translateRace(card.race) || '-')}</span>
-        </div>
-        <div class="candidate-stats-atkdef">⚔️ ${atkText} / 🛡️ ${defText}</div>
-      </div>
+      ${renderCardSummary(card)}
     `;
     makeCardInteractive(div, () => selectCard(card));
     container.appendChild(div);
@@ -287,7 +289,11 @@ function renderHints() {
       : t(hint.hintKind === 'bonus' ? 'dynamic.bonusHint' : 'dynamic.confirmedHint');
     const cost = entries.reduce((sum, entry) => sum + (entry.hint.hintCost || 0), 0);
     li.innerHTML = `<div class="history-batch-heading"><strong>${escapeHTML(title)}</strong>${hint.type === 'direct' ? `<span class="history-cost">${t('dynamic.hintCost', { count: cost })}</span>` : ''}</div>
-      <div class="history-stats">${entries.map(({ hint: entry }) => `<span class="history-stat ${entry.isCorrect ? 'res-correct' : 'res-wrong'}"><span>${getStatNameKR(entry.stat)}</span><strong>${escapeHTML(getTranslatedValue(entry.stat, entry.value))}</strong>${entry.type === 'guess' ? `<b>${entry.isCorrect ? 'O' : 'X'}</b>` : ''}</span>`).join('')}</div>`;
+      <div class="history-stats">${entries.map(({ hint: entry }) => {
+        const revealed = entry.stat === 'frameType' && entry.isCorrect
+          ? hints.find(item => item.type === 'direct' && item.stat === 'frameType' && item.batchId === entry.batchId) : null;
+        return `<span class="history-stat ${entry.isCorrect ? 'res-correct' : 'res-wrong'}"><span>${getStatNameKR(entry.stat)}</span><strong>${escapeHTML(getTranslatedValue(entry.stat, revealed?.value ?? entry.value))}</strong>${entry.type === 'guess' ? `<b>${entry.isCorrect ? 'O' : 'X'}</b>` : ''}</span>`;
+      }).join('')}</div>`;
     const deleteBtn = document.createElement('button');
     deleteBtn.className = 'btn-delete-hint';
     deleteBtn.textContent = t(hint.type === 'guess' ? 'dynamic.cancelGuess' : 'dynamic.cancelInput');
@@ -312,6 +318,13 @@ function applyDirectHints() {
       const existing = hints.find(hint => hint.type === 'direct' && hint.stat === stat);
       if (existing) {
         if (existing.value !== value) throw new Error(t('dynamic.statConflict', { stat: getStatNameKR(stat) }));
+        continue;
+      }
+      const revealedFrame = stat === 'frameType' ? hints.find(hint => hint.type === 'guess' && hint.stat === stat
+        && hint.isCorrect) : null;
+      if (revealedFrame) {
+        additions.push({ type: 'direct', stat, value, isCorrect: true, isExact: true,
+          batchId: revealedFrame.batchId, source: 'judgment', supplemental: true, hintCost: 0 });
         continue;
       }
       if (hints.some(hint => hint.type === 'guess' && hint.stat === stat && hint.isCorrect
@@ -429,6 +442,8 @@ function selectCard(card) {
   showInputMessage('');
 
   selectedCard = card;
+  frameChoice = null;
+  explicitFrameChoice = false;
   selectedCardContainer.classList.remove('hidden');
   selectedCardImg.src = card.image_url || '';
   infoName.textContent = localizeCardName(card);
@@ -456,13 +471,12 @@ function selectCard(card) {
     </div>
   `;
   
-  statusToggles.forEach(btn => {
+  statusToggles().forEach(btn => {
     btn.classList.remove('active');
     btn.dataset.selected = "false";
     btn.setAttribute('aria-pressed', 'false');
   });
-  judgmentProgress.textContent = '0 / 6';
-  applyGuessBtn.disabled = true;
+  refreshMatchedInputs();
 
   // Scroll to input section when selecting a card
   const target = document.getElementById('guessResultSection');
@@ -473,8 +487,9 @@ function selectCard(card) {
   }
 }
 
-statusToggles.forEach(btn => {
-  btn.addEventListener('click', (e) => {
+document.querySelector('.status-toggles').addEventListener('click', event => {
+    const btn = event.target.closest('.btn-toggle');
+    if (!btn || btn.disabled) return;
     const parent = btn.parentElement;
     parent.querySelectorAll('.btn-toggle').forEach(b => {
       b.classList.remove('active');
@@ -484,11 +499,45 @@ statusToggles.forEach(btn => {
     btn.classList.add('active');
     btn.dataset.selected = "true";
     btn.setAttribute('aria-pressed', 'true');
+    if (btn.closest('.status-row').dataset.stat === 'frameType') {
+      frameChoice = btn.dataset.result;
+      explicitFrameChoice = true;
+    }
     refreshMatchedInputs();
-  });
 });
 
+function refreshFrameResults() {
+  if (!selectedCard) return;
+  const other = [...document.querySelectorAll('.status-row')].flatMap(row => {
+    const active = row.querySelector('.btn-toggle.active');
+    const stat = row.dataset.stat;
+    if (stat === 'frameType' || !active) return [];
+    return [{ type: 'guess', stat, isCorrect: active.dataset.val === 'correct',
+      value: stat === 'level' ? getValidLevels(selectedCard) : selectedCard[stat] }];
+  });
+  const result = getFrameResults(candidates, selectedCard, other);
+  const values = [...result.values];
+  // Preserve an explicit observation if another row contradicts it. Submission
+  // validation then points out the conflict instead of silently replacing it.
+  const conflict = !result.valid || (explicitFrameChoice && frameChoice && !values.includes(frameChoice));
+  if (explicitFrameChoice && frameChoice && !values.includes(frameChoice)) values.push(frameChoice);
+  if (!explicitFrameChoice) frameChoice = result.automatic;
+  const choices = document.getElementById('frameResultChoices');
+  choices.style.setProperty('--frame-choice-columns', values.length === 1 ? 1 : 2);
+  const focused = choices.contains(document.activeElement) ? document.activeElement.dataset.result : null;
+  choices.innerHTML = values.map(value => {
+    const active = value === frameChoice;
+    return `<button type="button" class="btn-toggle ${value === 'wrong' ? 'btn-wrong' : 'btn-correct'}${active ? ' active' : ''}"
+      data-result="${escapeHTML(value)}" data-val="${value === 'wrong' ? 'wrong' : 'correct'}"
+      data-selected="${active}" aria-pressed="${active}">${escapeHTML(value === 'wrong' ? t('main.wrong') : t('main.frameMatch', { frame: translateFrame(value) }))}</button>`;
+  }).join('');
+  if (focused) [...choices.children].find(button => button.dataset.result === focused)?.focus({ preventScroll: true });
+  document.getElementById('frameResultNote').textContent = t(conflict ? 'dynamic.frameConflict'
+    : result.automatic && !explicitFrameChoice ? 'dynamic.frameAutomatic' : 'main.frameResultHelp');
+}
+
 function refreshMatchedInputs() {
+  refreshFrameResults();
   const selected = [...document.querySelectorAll('.status-row')].flatMap(row => {
     const active = row.querySelector('.btn-toggle.active');
     if (!active || !selectedCard) return [];
@@ -532,7 +581,13 @@ applyGuessBtn.addEventListener('click', () => {
     showInputMessage(t('dynamic.needSix'));
     return;
   }
-  const completedHints = applyAutomaticMatches(newHints, [selectedCard]);
+  const frame = document.querySelector('.status-row[data-stat="frameType"] .btn-toggle.active');
+  let completedHints;
+  try {
+    completedHints = applyAutomaticMatches(newHints, [selectedCard], {
+      revealedFrames: frame?.dataset.val === 'correct' ? { [batchId]: frame.dataset.result } : {}
+    });
+  } catch (error) { showInputMessage(error.message); return; }
   const provisionalCandidates = filterCandidatesByHints(candidates, completedHints);
   if (!provisionalCandidates.length) {
     showInputMessage(t('dynamic.impossibleFeedback'));
@@ -581,6 +636,7 @@ function applyFilters() {
   strategyMsg.classList.remove('guaranteed-result');
   persistSession();
   updateHintStrategy(false);
+  if (selectedCard) refreshMatchedInputs();
 }
 
 function resetChallenge(preserveResources = false) {
@@ -607,15 +663,19 @@ function resetChallenge(preserveResources = false) {
   // Reset search & selectedCard (Mode 2)
   if (searchInput) searchInput.value = "";
   selectedCard = null;
+  frameChoice = null;
+  explicitFrameChoice = false;
   if (selectedCardContainer) selectedCardContainer.classList.add('hidden');
   
   // Reset toggles (Mode 2)
-  statusToggles.forEach(btn => {
+  statusToggles().forEach(btn => {
     btn.classList.remove('active');
     btn.dataset.selected = "false";
   });
   judgmentProgress.textContent = '0 / 6';
   applyGuessBtn.disabled = true;
+  document.getElementById('frameResultChoices').innerHTML = '';
+  document.getElementById('frameResultNote').textContent = '';
   
   // Reset numeric settings (0. 남은 횟수 설정)
   hintsLeft.value = resources.remainingHints;
@@ -722,6 +782,7 @@ function renderRecommendationList(list, container) {
     div.innerHTML = `
       <img src="${imgUrl}" alt="${escapeHTML(displayName)}" loading="lazy" onerror="this.onerror=null;this.style.visibility='hidden'">
       <div class="card-item-title" title="${escapeHTML(displayName)}">${escapeHTML(displayName)}</div>
+      ${renderCardSummary(card)}
       ${item.equivalentChoices > 1 ? `<div class="card-item-stats">${t('dynamic.equivalent', { count: item.equivalentChoices })}</div>` : ''}
       <div class="recommendation-primary">${primaryText}</div>
       ${secondaryText && secondaryText !== primaryText ? `<div class="recommendation-secondary">${secondaryText}</div>` : ''}
@@ -835,7 +896,10 @@ function calculateRecommendations() {
       candidateIds: candidates.map(card => card.id),
       guessedIds: [...new Set(hints.filter(hint => hint.type === 'guess').map(hint => hint.cardId))],
       revealedStats: [...new Set(hints.filter(hint => hint.isCorrect).map(hint => hint.stat))],
-      attempts: calculationBudget
+      attempts: calculationBudget,
+      resourceAttempts: budget(totalAttemptsLeft.value),
+      remainingHints: budget(hintsLeft.value),
+      problemsLeft: budget(problemsLeft.value, 1)
     } });
   } catch (error) { cancelCalculation(); strategyMsg.textContent = t('dynamic.calcFailed', { error: error.message }); }
 }
@@ -865,6 +929,7 @@ function updateHintStrategy(autoSelect = false) {
   document.getElementById('autoCriteriaReason').textContent = manualCriteria ? t('dynamic.manualCriteria')
     : t('dynamic.autoCriteriaReason', { attempts, problems, criterion: t(`criteria.${activeCriteria}`), count: Math.min(4, currentBudget) });
   const messages = [];
+  let hintAdviceHTML = '';
   if (hasSolvedGuess(hints) && candidates.length) {
     calcRecBtn.disabled = true;
     strategyMsg.textContent = t('dynamic.solved');
@@ -892,29 +957,20 @@ function updateHintStrategy(autoSelect = false) {
       remainingHints,
       problemsLeft: problems,
       candidateCount: candidates.length,
-      hint: calculatedResults.hint,
+      hint: calculatedResults.hint ? { ...calculatedResults.hint, timing: best?.hintTiming ?? null } : null,
+      guessedCount: new Set(hints.filter(hint => hint.type === 'guess').map(hint => hint.cardId)).size,
       bestGuessExpectedRemaining: calculatedResults.bestGuessExpectedRemaining
     });
-    if (calculatedResults.hint && remainingHints) {
-      const values = {
-        count: candidates.length,
-        expected: calculatedResults.hint.expectedRemaining.toFixed(1),
-        before: `${(hintAdvice.currentOneShotProb * 100).toFixed(2)}%`,
-        after: `${(hintAdvice.expectedOneShotProb * 100).toFixed(2)}%`,
-        gain: (hintAdvice.oneShotGain * 100).toFixed(2),
-        horizonCount: hintAdvice.evaluationDepth ?? calculatedResults.horizonDepth,
-        solveGain: ((hintAdvice.solveGain ?? 0) * 100).toFixed(1),
-        saved: (hintAdvice.attemptsSaved ?? 0).toFixed(2),
-        value: (hintAdvice.opportunityCost ?? 0).toFixed(2)
-      };
-      if (hintAdvice.decision === 'use') messages.push(`<strong>${t('dynamic.hintUseCompact', values)}</strong>`);
-      else if (hintAdvice.reason === 'noAttempts') messages.push(t('dynamic.hintSaveNoAttempts'));
-      else if (hintAdvice.reason === 'scarceResource') messages.push(t('dynamic.hintSaveScarce', values));
-      else messages.push(t('dynamic.hintSaveCompact', values));
-      if (hintAdvice.evaluationDepth >= 2) messages.push(t('dynamic.hintResourceValue', values));
+    if (calculatedResults.hint && remainingHints && !guaranteed) {
+      const notice = formatHintAdvice(hintAdvice, calculatedResults.hint);
+      hintAdviceHTML = `<aside class="hint-advice" aria-live="polite" data-decision="${hintAdvice.decision}">
+        <strong>${escapeHTML(notice.title)}</strong>
+        <p>${escapeHTML(notice.reason)}</p>
+        ${notice.detail ? `<p class="hint-metrics">${escapeHTML(notice.detail)}</p>` : ''}
+      </aside>`;
     }
   }
-  strategyMsg.innerHTML = messages.map((message, index) => `<p class="${index === 0 ? 'strategy-result' : 'strategy-advice'}">${message}</p>`).join('');
+  strategyMsg.innerHTML = messages.map((message, index) => `<p class="${index === 0 ? 'strategy-result' : 'strategy-advice'}">${message}</p>`).join('') + hintAdviceHTML;
   strategyMsg.classList.toggle('guaranteed-result', calculatedResults?.snipes.some(score => score.oneShotProb >= 1 - 1e-10) ?? false);
 }
 
@@ -922,9 +978,7 @@ for (const input of [totalAttemptsLeft, hintsLeft, problemsLeft]) {
   input.addEventListener('change', () => {
     input.value = budget(input.value, input === problemsLeft ? 1 : 0);
     persistSession(); updateHintStrategy(true);
-    const nextBudget = Math.min(4, Math.max(1, allocateAttempts(budget(totalAttemptsLeft.value), budget(problemsLeft.value, 1))));
-    if ((calculatedResults || solverWorker) && calculationBudget !== nextBudget) calculateRecommendations();
-    else if (calculatedResults) renderRecommendations();
+    if (calculatedResults || solverWorker) calculateRecommendations();
   });
 }
 document.getElementById('candidateSearch').addEventListener('input', () => { candidateLimit = CANDIDATE_PAGE_SIZE; renderCandidatePage(); });

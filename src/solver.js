@@ -4,6 +4,7 @@ import { STAT_KEYS, getValidLevels, getTargetRulesLevel, getRevealedValue } from
 export const TWO_TURN_LIMIT = 60;
 export const THREE_TURN_LIMIT = 30;
 export const FOUR_TURN_LIMIT = 16;
+export const HINT_TIMING_LIMIT = 12;
 const FRAME_PARTS = ['normal', 'effect', 'fusion', 'synchro', 'xyz', 'link', 'ritual', 'pendulum'];
 const mask = (card) => card.frameType.split('_').reduce((bits, part) => bits | (1 << FRAME_PARTS.indexOf(part)), 0);
 const signature = card => JSON.stringify([card.frameType, getValidLevels(card), getTargetRulesLevel(card), card.attribute, card.race, card.atk, card.def]);
@@ -115,15 +116,105 @@ function createPlanner(scores, targets, targetBits) {
   return { weightOf, bestWin, evaluate, evaluateAction, actionsByKey, selectedKeys, exact };
 }
 
+// Compare paying now with one ordinary judgment followed by a conditional hint.
+// Use the existing branches and no-hint planner; card matching is unchanged.
+function addHintTiming(scores, targets, targetBits, planner, unknown, turns, opportunityCost) {
+  const allBits = targetBits.reduce((bits, bit) => bits | bit, 0n);
+  const total = planner.weightOf(allBits);
+  const unknownMask = unknown.reduce((bits, stat) => bits | (1 << STAT_KEYS.indexOf(stat)), 0);
+  const valueMasks = STAT_KEYS.map(stat => {
+    const values = new Map();
+    targets.forEach((target, index) => {
+      const key = JSON.stringify(getRevealedValue(target.card, stat));
+      values.set(key, (values.get(key) || 0n) | targetBits[index]);
+    });
+    return [...values.values()];
+  });
+  const hintCache = new Map();
+  const reveal = (bits, unrevealed, depth) => {
+    if (!unrevealed || !depth) return null;
+    const key = `${bits}:${unrevealed}:${depth}`;
+    if (hintCache.has(key)) return hintCache.get(key);
+    const result = { wins: 0, spent: 0, hints: planner.weightOf(bits) };
+    let count = 0;
+    for (let stat = 0; stat < STAT_KEYS.length; stat++) {
+      if (!(unrevealed & (1 << stat))) continue;
+      count++;
+      for (const value of valueMasks[stat]) {
+        const bucket = bits & value;
+        if (!bucket) continue;
+        const next = planner.evaluate(bucket, depth);
+        result.wins += next.wins; result.spent += next.spent;
+      }
+    }
+    result.wins /= count; result.spent /= count;
+    hintCache.set(key, result);
+    return result;
+  };
+  const preferHint = (hint, baseline) => {
+    if (!hint) return false;
+    if (hint.wins > baseline.wins + 1e-9) return true;
+    return Math.abs(hint.wins - baseline.wins) <= 1e-9
+      && hint.spent + opportunityCost * hint.hints < baseline.spent - 1e-9;
+  };
+  const actions = new Map();
+  for (const score of scores) {
+    score.hintActionKey = `${score.winBits}:${score.branchProfiles.map(([profile, bits]) => `${profile & unknownMask}=${bits}`).sort().join(',')}`;
+    if (!actions.has(score.hintActionKey)) actions.set(score.hintActionKey, score);
+  }
+  const exact = planner.exact && actions.size <= 96;
+  const chosen = actions.size <= 96 ? new Set(actions.keys()) : new Set();
+  if (actions.size > 96) {
+    const ranking = scores.map(score => ({ ...score, card: score.group[0].card }));
+    for (const metric of ['oneShot', 'twoShot', 'horizon', 'entropy', 'expected', 'minimax']) {
+      const seen = new Set();
+      for (const score of sortScores(ranking, metric)) {
+        if (seen.has(score.hintActionKey)) continue;
+        seen.add(score.hintActionKey); chosen.add(score.hintActionKey);
+        if (seen.size === 8) break;
+      }
+    }
+  }
+  const now = reveal(allBits, unknownMask, turns);
+  const results = new Map();
+  for (const key of chosen) {
+    const action = actions.get(key);
+    let wins = action.winning, spent = total, hintsUsed = 0, surviving = action.winning;
+    for (const [profile, branch] of action.branchProfiles) {
+      const size = planner.weightOf(branch);
+      surviving += size;
+      const baseline = planner.evaluate(branch, turns - 1);
+      const after = reveal(branch, unknownMask & ~profile, turns - 1);
+      const use = preferHint(after, baseline);
+      const next = use ? after : baseline;
+      wins += next.wins; spent += next.spent;
+      if (use) hintsUsed += after.hints;
+    }
+    spent += (total - surviving) * (turns - 1);
+    results.set(key, {
+      count: turns, exact,
+      nowProb: now.wins / total, waitProb: wins / total,
+      nowAttempts: now.spent / total, waitAttempts: spent / total,
+      waitHints: hintsUsed / total,
+      nowCost: now.spent / total + opportunityCost,
+      waitCost: spent / total + opportunityCost * hintsUsed / total
+    });
+  }
+  for (const score of scores) score.hintTiming = results.get(score.hintActionKey) ?? null;
+}
+
 export function createSolver(cards) {
+  const frameCodes = new Map([...new Set(cards.map(card => card.frameType))].map((frame, index) => [frame, index + 1]));
   const records = cards.map(card => ({
     card, key: signature(card), frameMask: mask(card),
+    frameCode: frameCodes.get(card.frameType),
     levelMask: getValidLevels(card).reduce((bits, level) => bits | (1 << level), 0),
     rulesLevel: getTargetRulesLevel(card)
   }));
-  const bucketCapacity = 64;
+  const bucketCapacity = 64 * (frameCodes.size + 1);
 
-  return function solve({ candidateIds, guessedIds = [], revealedStats = [], attempts = 2 }) {
+  return function solve({ candidateIds, guessedIds = [], revealedStats = [], attempts = 2,
+    remainingHints = 1, problemsLeft = 1, resourceAttempts = attempts }) {
     const started = performance.now();
     const ids = new Set(candidateIds);
     const used = new Set(guessedIds);
@@ -148,6 +239,7 @@ export function createSolver(cards) {
     const horizonDepth = requestedDepth >= 4 && targets.length <= FOUR_TURN_LIMIT ? 4
       : requestedDepth >= 3 && targets.length <= THREE_TURN_LIMIT ? 3
         : requestedDepth >= 2 && twoTurnExact ? 2 : 1;
+    const collectTiming = targets.length <= HINT_TIMING_LIMIT && horizonDepth >= 2 && remainingHints > 0;
     const scores = [];
     if (!total) return { snipes: [], scouts: [], twoTurnExact: false, total, hint: null, durationMs: 0 };
     const counts = new Int32Array(bucketCapacity);
@@ -171,13 +263,13 @@ export function createSolver(cards) {
           if (twoTurnExact) winBits |= targetBits[j];
           continue;
         }
-        const survivesAutomaticValues = (!(profile & 1) || target.card.frameType === guess.card.frameType)
-          && (!(profile & 2) || target.rulesLevel === guess.rulesLevel);
-        if (!survivesAutomaticValues) {
+        const survivesAutomaticLevel = !(profile & 2) || target.rulesLevel === guess.rulesLevel;
+        if (!survivesAutomaticLevel) {
           eliminated += target.weight;
           continue;
         }
-        const key = profile;
+        // A frame match reveals the target's full frame, including Pendulum.
+        const key = profile + ((profile & 1) ? 64 * target.frameCode : 0);
         if (counts[key] === 0) touched.push(key);
         counts[key] += target.weight;
         if (twoTurnExact) branches.set(key, (branches.get(key) || 0n) | targetBits[j]);
@@ -197,7 +289,8 @@ export function createSolver(cards) {
       const eliminationProb = eliminated / total;
       scores.push({ group, entropy, adjustedEntropy: entropy - eliminationProb * 2, expectedRemaining: squares / total, minimax,
         oneShotProb: winning / total, twoShotProb: null, eliminationProb, winning,
-        winningTargets, winBits, branches: twoTurnExact ? [...branches.values()] : null });
+        winningTargets, winBits, branches: twoTurnExact ? [...branches.values()] : null,
+        branchProfiles: collectTiming ? [...branches.entries()] : null });
     }
 
     const allBits = twoTurnExact ? targetBits.reduce((bits, bit) => bits | bit, 0n) : 0n;
@@ -275,9 +368,18 @@ export function createSolver(cards) {
       };
       hint.solveGain = Math.max(0, hint.expectedSolveProb - hint.currentSolveProb);
       hint.attemptsSaved = planner ? Math.max(0, hint.currentExpectedAttempts - hint.expectedAttemptsAfterHint) : null;
+      hint.guessedCount = used.size;
+      hint.exact = horizonDepth <= 2 || planner?.exact === true;
+      if (collectTiming) {
+        addHintTiming(scores, targets, targetBits, planner, unknown, horizonDepth,
+          getHintOpportunityCost(resourceAttempts, remainingHints, problemsLeft));
+        const criteria = currentOneShotProb >= 1 - 1e-10 ? 'oneShot'
+          : chooseCriteria({ attempts: requestedDepth, twoTurnExact, horizonDepth, candidateCount: total });
+        hint.timing = sortScores(scores.map(score => ({ ...score, card: score.group[0].card })), criteria)[0]?.hintTiming ?? null;
+      }
     }
     const snipes = [], scouts = [];
-    for (const { group, branches, winBits, actionKey, winning, winningTargets, ...score } of scores) {
+    for (const { group, branches, branchProfiles, winBits, actionKey, hintActionKey, winning, winningTargets, ...score } of scores) {
       for (const { card } of group) {
         const item = { card, profileKey: group[0].key, equivalentChoices: group.length, ...score };
         // A card outside the candidate set may still win via partial-frame matching.
@@ -321,7 +423,16 @@ export function allocateAttempts(totalAttempts) {
   return total;
 }
 
-export function recommendHintUse({ attempts, remainingHints, problemsLeft = 1, candidateCount, hint, bestGuessExpectedRemaining }) {
+export function getHintOpportunityCost(attempts, remainingHints, problemsLeft = 1) {
+  const tries = Number.isFinite(Number(attempts)) ? Math.max(0, Number(attempts)) : 0;
+  const hints = Number.isFinite(Number(remainingHints)) ? Math.max(1, Number(remainingHints)) : 1;
+  const problems = Number.isFinite(Number(problemsLeft)) ? Math.max(1, Number(problemsLeft)) : 1;
+  return Math.min(2, Math.max(0.35, Math.sqrt(tries / (4 * hints))))
+    + Math.min(0.5, Math.max(0, problems / hints - 1) * 0.1);
+}
+
+export function recommendHintUse({ attempts, remainingHints, problemsLeft = 1, candidateCount, hint, bestGuessExpectedRemaining,
+  guessedCount = hint?.guessedCount ?? 0 }) {
   const hints = Number.isFinite(Number(remainingHints)) ? Math.max(0, Math.floor(Number(remainingHints))) : 0;
   const tries = Number.isFinite(Number(attempts)) ? Math.max(0, Math.floor(Number(attempts))) : 0;
   const problems = Number.isFinite(Number(problemsLeft)) ? Math.max(1, Math.floor(Number(problemsLeft))) : 1;
@@ -343,7 +454,13 @@ export function recommendHintUse({ attempts, remainingHints, problemsLeft = 1, c
   const expectedOneShotProb = Math.max(currentOneShotProb, hint.expectedOneShotProb || currentOneShotProb);
   const hintAvailability = hints / problems;
   const scarcity = hintAvailability < 0.75 ? 'scarce' : hintAvailability < 1.5 ? 'balanced' : 'abundant';
-  const metrics = { expectedRemaining, reductionRate, oneShotGain, relativeToGuess, currentOneShotProb, expectedOneShotProb, scarcity };
+  const evaluationDepth = hint.evaluationDepth ?? 1;
+  const solveGain = Math.max(0, hint.solveGain ?? oneShotGain);
+  const attemptsSaved = Math.max(0, hint.attemptsSaved ?? 0);
+  const opportunityCost = getHintOpportunityCost(tries, hints, problems);
+  const judgments = Number.isFinite(Number(guessedCount)) ? Math.max(0, Math.floor(Number(guessedCount))) : 0;
+  const metrics = { expectedRemaining, reductionRate, oneShotGain, relativeToGuess, currentOneShotProb,
+    expectedOneShotProb, scarcity, evaluationDepth, solveGain, attemptsSaved, opportunityCost, guessedCount: judgments };
 
   if (hintReduction < 0.5 && oneShotGain < 0.001) return { decision: 'save', reason: 'noValue', ...metrics };
   // Hints are granted at one quarter of the daily attempt rate. Preserve their
@@ -351,25 +468,41 @@ export function recommendHintUse({ attempts, remainingHints, problemsLeft = 1, c
   if (tries === 0) return { decision: 'save', reason: 'noAttempts', ...metrics };
 
   if (currentOneShotProb >= 1 - 1e-10) return { decision: 'save', reason: 'guaranteedGuess', ...metrics };
-  const evaluationDepth = hint.evaluationDepth ?? 1;
-  const solveGain = Math.max(0, hint.solveGain ?? oneShotGain);
-  const attemptsSaved = Math.max(0, hint.attemptsSaved ?? 0);
-  // The 4:1 daily grant ratio anchors the price of a scarce hint. Use only the
-  // supplied resource pool; never invent future grants or an event end date.
-  const opportunityCost = Math.min(2, Math.max(0.35, Math.sqrt(tries / (4 * hints))))
-    + Math.min(0.5, Math.max(0, problems / hints - 1) * 0.1);
+  if (problems === 1 && hints >= hint.unknownCount && opportunityCost <= 0.5) {
+    return { decision: 'use', reason: 'finishRevealing', ...metrics };
+  }
+
+  const timing = hint.timing;
+  if (timing) {
+    const nowCost = timing.nowAttempts + opportunityCost;
+    const waitCost = timing.waitAttempts + opportunityCost * timing.waitHints;
+    const gainOverWaiting = timing.nowProb - timing.waitProb;
+    if (gainOverWaiting < -1e-9 || (Math.abs(gainOverWaiting) <= 1e-9 && nowCost >= waitCost - 1e-9)) {
+      return { decision: 'save', reason: 'waitForJudgment', ...metrics, timing };
+    }
+    const use = gainOverWaiting >= 0.02 * opportunityCost || (Math.abs(gainOverWaiting) <= 1e-9 && nowCost < waitCost - 1e-9);
+    return { decision: use ? 'use' : 'save', reason: use ? (gainOverWaiting > 1e-9 ? 'betterThanWaiting' : 'saveAttempts') : 'weakValue', ...metrics, timing };
+  }
+
+  // A big initial pool supplies only a one-step estimate. Inspect the first
+  // judgment before committing a scarce hint, unless the measured improvement
+  // can already protect a short, nearly certain solution.
+  const decisiveMeasuredGain = evaluationDepth >= 2 && hint.expectedSolveProb >= 0.9 && solveGain >= 0.25;
+  if (tries > 1 && judgments === 0 && !decisiveMeasuredGain) {
+    return { decision: 'save', reason: 'firstJudgment', ...metrics };
+  }
   const informationValue = hint.informationEquivalentAttempts ?? 0;
-  const protectsLastAttempt = tries === 1 && solveGain >= Math.max(0.03, 0.08 * opportunityCost);
+  const protectsLastAttempt = tries === 1 && (problems === 1 ? solveGain > 1e-10 : solveGain >= Math.max(0.03, 0.08 * opportunityCost));
   const improvesSuccess = solveGain >= Math.min(0.35, 0.15 * opportunityCost);
   const savesAttempts = evaluationDepth >= 2 && attemptsSaved >= opportunityCost;
-  const valuableInformation = evaluationDepth === 1 && informationValue >= opportunityCost
+  const valuableInformation = judgments > 0 && evaluationDepth === 1 && informationValue >= opportunityCost
     && reductionRate >= 0.5 && oneShotGain >= 0.01;
   const use = protectsLastAttempt || improvesSuccess || savesAttempts || valuableInformation;
   return {
     decision: use ? 'use' : 'save',
     reason: use ? (protectsLastAttempt ? 'protectLastAttempt' : savesAttempts ? 'saveAttempts' : 'strongCurrentValue')
       : (scarcity === 'scarce' ? 'scarceResource' : 'weakValue'),
-    ...metrics, evaluationDepth, solveGain, attemptsSaved, opportunityCost
+    ...metrics
   };
 }
 
