@@ -59,6 +59,15 @@ test('other pending judgments can rule out Pendulum without an additional questi
   assert.equal(input.ready, true);
 });
 
+test('a conflicting non-frame result is reported before the frame judgment is selected', () => {
+  const input = getFrameInput([{ frameType: 'effect', attribute: 'DARK' }],
+    { frameType: 'fusion', attribute: 'LIGHT' }, {
+      otherJudgments: [{ type: 'guess', stat: 'attribute', value: 'LIGHT', isCorrect: true }]
+    });
+  assert.equal(input.conflict, true); assert.equal(input.ready, false);
+  assert.equal(input.showPendulum, false);
+});
+
 test('an explicit impossible Pendulum O stays visible for correction and blocks recording', () => {
   const input = getFrameInput([{ frameType: 'synchro' }], { frameType: 'synchro_pendulum' },
     { judgment: 'correct', pendulum: true, frame: 'synchro_pendulum' });

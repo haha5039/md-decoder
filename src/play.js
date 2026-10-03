@@ -1,7 +1,7 @@
 import './style.css';
-import { allCards as rawCards } from './cards_data.js';
+import { allCards as rawCards, dataGeneratedAt } from './cards_data.js';
 import { isFrameMatch, isLevelMatch, getValidLevels, renderCardStatsHTML, translateAttribute, translateFrame, translateRace, getTargetRulesLevel, filterCandidatesByHints, getGuessFeedback, escapeHTML, formatStat } from './utils.js';
-import { getCachedCards } from './db.js';
+import { renderDataStatus } from './data-status.js';
 import { alternateCardName, initializeI18n, localizeCardName, t } from './i18n.js';
 import { initializeTheme } from './theme.js';
 
@@ -617,22 +617,11 @@ if (undoGuessBtn) {
   });
 }
 
-async function loadGameDatabase() {
+function loadGameDatabase() {
   startGameBtn.disabled = true;
   startGameBtn.textContent = t('play.loadingData');
-  try {
-    const cached = await getCachedCards();
-    if (cached && cached.length > 0) {
-      allCards = cached.filter(c => c.frameType !== 'spell' && c.frameType !== 'trap');
-      console.log(`Play mode loaded ${allCards.length} cards from IndexedDB.`);
-    } else {
-      allCards = rawCards.filter(c => c.frameType !== 'spell' && c.frameType !== 'trap');
-      console.log(`Play mode loaded ${allCards.length} cards from static cards_data.js.`);
-    }
-  } catch (err) {
-    console.error("Play mode failed to load IndexedDB, fallback to static:", err);
-    allCards = rawCards.filter(c => c.frameType !== 'spell' && c.frameType !== 'trap');
-  }
+  allCards = rawCards.filter(c => c.frameType !== 'spell' && c.frameType !== 'trap');
+  renderDataStatus(dataGeneratedAt);
 
   // Pre-calculate valid levels
   allCards.forEach(card => {

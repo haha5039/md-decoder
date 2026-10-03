@@ -1169,7 +1169,9 @@ a {
 
 
 /* Feedback and navigation added by the deduction workflow. */
-#candidateNotice, #inputNotice, #playNotice { padding: 0.75rem; margin: 0.75rem 0; border: 1px solid #fbbf24; border-radius: 8px; color: #fbbf24; line-height: 1.6; }
+#candidateNotice, #inputNotice, #playNotice, #judgmentNotice { padding: 0.75rem; margin: 0.75rem 0; border: 1px solid #fbbf24; border-radius: 8px; color: #fbbf24; line-height: 1.6; }
+#judgmentNotice { font-size: 0.85rem; }
+:root[data-theme="light"] #judgmentNotice { color: #92400e; border-color: #d97706; background: #fffbeb; }
 #strategyMsg { line-height: 1.65; }
 #strategyMsg p + p { margin-top: 0.4rem; }
 #candidateSearch { margin: 0.5rem 0 1rem; }

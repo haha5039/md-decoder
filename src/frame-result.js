@@ -33,9 +33,9 @@ export function getFrameInput(cards, guess, {
     // Never replace a user's explicit frame with a different automatic choice.
     else result = frame || (frames.length === 1 ? frames[0] : null);
   }
-  const conflict = judgment !== null && (!eligible.valid
-    || (result !== null && !eligible.values.includes(result))
-    || (showKinds && frames.length === 0));
+  const conflict = !eligible.valid || (judgment !== null
+    && ((result !== null && !eligible.values.includes(result))
+      || (showKinds && frames.length === 0)));
   return { showPendulum, showKinds, frames, result, conflict,
     ready: judgment !== null && result !== null && !conflict,
     automaticKind: showKinds && !frame && frames.length === 1 };
