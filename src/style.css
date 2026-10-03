@@ -616,10 +616,12 @@ button {
 }
 .hint-advice > p { margin: 0.35rem 0 0; }
 .hint-advice .hint-metrics { color: var(--text-muted); font-size: 0.8rem; }
-.status-row.frame-result-row { display: flex; flex-direction: column; align-items: stretch; gap: 0.45rem; }
-.frame-result-choices { display: grid; grid-template-columns: repeat(var(--frame-choice-columns,2),minmax(0,1fr)); gap: 0.4rem; }
-.frame-result-choices .btn-toggle { min-height: 42px; padding: 0.5rem; font-size: 0.85rem; white-space: normal; }
-#frameResultNote { color: var(--text-muted); font-size: 0.75rem; line-height: 1.45; }
+.frame-details { margin: 0 0 0.15rem 0.75rem; padding: 0.5rem 0.65rem; border-left: 2px solid var(--panel-border); }
+.frame-detail-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; font-size: 0.85rem; }
+.frame-detail-row .btn-toggle { min-width: 72px; padding: 0.45rem 0.75rem; font-size: 0.85rem; border-radius: 8px; font-weight: bold; }
+.frame-kind-row { display: flex; flex-direction: column; gap: 0.35rem; margin-top: 0.5rem; font-size: 0.85rem; }
+.frame-kind-row select { width: 100%; min-width: 0; }
+.frame-result-note { padding: 0 0.75rem; color: var(--text-muted); font-size: 0.75rem; line-height: 1.45; }
 
 .recommendation-primary {
   margin-top: 0.45rem;

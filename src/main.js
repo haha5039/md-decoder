@@ -7,7 +7,7 @@ import { initializeTheme } from './theme.js';
 import { allocateAttempts, sortScores, distinctScores, TWO_TURN_LIMIT, chooseCriteria, recommendHintUse } from './solver.js';
 import { fetchCardManifest } from './data.js';
 import { formatHintAdvice } from './hint-advice.js';
-import { getFrameResults } from './frame-result.js';
+import { getFrameInput } from './frame-result.js';
 import { applyAutomaticMatches, budget, consumeAttempt, createBatchId, recordDirectHints, nextChallenge, parseStatInput, removeInputBatch, saveSession, restoreSession, hasSolvedGuess } from './session.js';
 
 import { getCachedCards, saveCachedCards, clearCachedCards } from './db.js'
@@ -22,8 +22,9 @@ const initialStrategyHTML = () => `
 let candidates = [];
 let hints = []; // Array of { type: 'guess'|'direct', stat, isCorrect, value, cardName }
 let selectedCard = null;
-let frameChoice = null;
-let explicitFrameChoice = false;
+let framePendulum = false;
+let frameKindChoice = null;
+let frameResult = null;
 let calculatedResults = null;
 let activeCriteria = 'entropy';
 let manualCriteria = false;
@@ -171,7 +172,9 @@ function makeCardInteractive(element, action) {
 
 function renderKnownStats() {
   document.getElementById('knownStats').innerHTML = ['frameType', 'attribute', 'level', 'race', 'atk', 'def'].map(stat => {
-    let known = hints.find(hint => hint.type === 'direct' && hint.stat === stat && hint.isCorrect)
+    let known = hints.find(hint => hint.type === 'direct' && hint.stat === stat && hint.isCorrect
+      && (stat !== 'frameType' || hint.value !== 'pendulum'))
+      || hints.find(hint => hint.type === 'direct' && hint.stat === stat && hint.isCorrect)
       || hints.find(hint => hint.stat === stat && hint.isCorrect);
     if (stat === 'frameType' && known?.type === 'guess') {
       const frames = [...new Set(candidates.map(card => card.frameType))];
@@ -442,8 +445,9 @@ function selectCard(card) {
   showInputMessage('');
 
   selectedCard = card;
-  frameChoice = null;
-  explicitFrameChoice = false;
+  framePendulum = false;
+  frameKindChoice = null;
+  frameResult = null;
   selectedCardContainer.classList.remove('hidden');
   selectedCardImg.src = card.image_url || '';
   infoName.textContent = localizeCardName(card);
@@ -499,15 +503,24 @@ document.querySelector('.status-toggles').addEventListener('click', event => {
     btn.classList.add('active');
     btn.dataset.selected = "true";
     btn.setAttribute('aria-pressed', 'true');
-    if (btn.closest('.status-row').dataset.stat === 'frameType') {
-      frameChoice = btn.dataset.result;
-      explicitFrameChoice = true;
+    if (btn.dataset.pendulum !== undefined) {
+      const next = btn.dataset.pendulum === 'true';
+      if (next !== framePendulum) frameKindChoice = null;
+      framePendulum = next;
+    } else if (btn.closest('.status-row')?.dataset.stat === 'frameType' && btn.dataset.val === 'wrong') {
+      framePendulum = false;
+      frameKindChoice = null;
     }
     refreshMatchedInputs();
 });
 
+document.getElementById('frameKind').addEventListener('change', event => {
+  frameKindChoice = event.target.value || null;
+  refreshMatchedInputs();
+});
+
 function refreshFrameResults() {
-  if (!selectedCard) return;
+  if (!selectedCard) return { ready: false };
   const other = [...document.querySelectorAll('.status-row')].flatMap(row => {
     const active = row.querySelector('.btn-toggle.active');
     const stat = row.dataset.stat;
@@ -515,32 +528,38 @@ function refreshFrameResults() {
     return [{ type: 'guess', stat, isCorrect: active.dataset.val === 'correct',
       value: stat === 'level' ? getValidLevels(selectedCard) : selectedCard[stat] }];
   });
-  const result = getFrameResults(candidates, selectedCard, other);
-  const values = [...result.values];
-  // Preserve an explicit observation if another row contradicts it. Submission
-  // validation then points out the conflict instead of silently replacing it.
-  const conflict = !result.valid || (explicitFrameChoice && frameChoice && !values.includes(frameChoice));
-  if (explicitFrameChoice && frameChoice && !values.includes(frameChoice)) values.push(frameChoice);
-  if (!explicitFrameChoice) frameChoice = result.automatic;
-  const choices = document.getElementById('frameResultChoices');
-  choices.style.setProperty('--frame-choice-columns', values.length === 1 ? 1 : 2);
-  const focused = choices.contains(document.activeElement) ? document.activeElement.dataset.result : null;
-  choices.innerHTML = values.map(value => {
-    const active = value === frameChoice;
-    return `<button type="button" class="btn-toggle ${value === 'wrong' ? 'btn-wrong' : 'btn-correct'}${active ? ' active' : ''}"
-      data-result="${escapeHTML(value)}" data-val="${value === 'wrong' ? 'wrong' : 'correct'}"
-      data-selected="${active}" aria-pressed="${active}">${escapeHTML(value === 'wrong' ? t('main.wrong') : t('main.frameMatch', { frame: translateFrame(value) }))}</button>`;
-  }).join('');
-  if (focused) [...choices.children].find(button => button.dataset.result === focused)?.focus({ preventScroll: true });
-  document.getElementById('frameResultNote').textContent = t(conflict ? 'dynamic.frameConflict'
-    : result.automatic && !explicitFrameChoice ? 'dynamic.frameAutomatic' : 'main.frameResultHelp');
+  const judgment = document.querySelector('.status-row[data-stat="frameType"] .btn-toggle.active')?.dataset.val ?? null;
+  const knownFrame = hints.find(hint => hint.type === 'direct' && hint.stat === 'frameType'
+    && hint.isCorrect && hint.value !== 'pendulum')?.value;
+  const result = getFrameInput(candidates, selectedCard, {
+    judgment, pendulum: framePendulum, frame: frameKindChoice, knownFrame, otherJudgments: other
+  });
+  frameResult = result.result;
+  document.getElementById('frameDetails').classList.toggle('hidden', !result.showPendulum);
+  document.querySelectorAll('#framePendulumChoices .btn-toggle').forEach(button => {
+    const active = (button.dataset.pendulum === 'true') === framePendulum;
+    button.classList.toggle('active', active);
+    button.dataset.selected = String(active);
+    button.setAttribute('aria-pressed', String(active));
+  });
+  document.getElementById('frameKindRow').classList.toggle('hidden', !result.showKinds);
+  const select = document.getElementById('frameKind');
+  select.innerHTML = `<option value="">${escapeHTML(t('main.selectFrame'))}</option>`
+    + result.frames.map(value => `<option value="${escapeHTML(value)}">${escapeHTML(translateFrame(value))}</option>`).join('');
+  select.value = result.showKinds && result.frames.includes(result.result) ? result.result : '';
+  const note = document.getElementById('frameResultNote');
+  note.classList.toggle('hidden', !result.showPendulum && !result.conflict);
+  note.textContent = t(result.conflict ? 'dynamic.frameConflict'
+    : result.automaticKind ? 'dynamic.frameKindAutomatic'
+      : result.showKinds ? 'main.selectFrame' : 'main.frameResultHelp');
+  return result;
 }
 
 function refreshMatchedInputs() {
-  refreshFrameResults();
+  const frame = refreshFrameResults();
   const selected = [...document.querySelectorAll('.status-row')].flatMap(row => {
     const active = row.querySelector('.btn-toggle.active');
-    if (!active || !selectedCard) return [];
+    if (!active || !selectedCard || (row.dataset.stat === 'frameType' && !frame.ready)) return [];
     const stat = row.dataset.stat;
     return [{ type: 'guess', stat, isCorrect: active.dataset.val === 'correct', value: stat === 'level' ? getValidLevels(selectedCard) : selectedCard[stat] }];
   });
@@ -581,11 +600,15 @@ applyGuessBtn.addEventListener('click', () => {
     showInputMessage(t('dynamic.needSix'));
     return;
   }
-  const frame = document.querySelector('.status-row[data-stat="frameType"] .btn-toggle.active');
+  const frame = refreshFrameResults();
+  if (!frame.ready) {
+    showInputMessage(t(frame.conflict ? 'dynamic.frameConflict' : 'main.selectFrame'));
+    return;
+  }
   let completedHints;
   try {
     completedHints = applyAutomaticMatches(newHints, [selectedCard], {
-      revealedFrames: frame?.dataset.val === 'correct' ? { [batchId]: frame.dataset.result } : {}
+      revealedFrames: frameResult !== 'wrong' ? { [batchId]: frameResult } : {}
     });
   } catch (error) { showInputMessage(error.message); return; }
   const provisionalCandidates = filterCandidatesByHints(candidates, completedHints);
@@ -663,18 +686,23 @@ function resetChallenge(preserveResources = false) {
   // Reset search & selectedCard (Mode 2)
   if (searchInput) searchInput.value = "";
   selectedCard = null;
-  frameChoice = null;
-  explicitFrameChoice = false;
+  framePendulum = false;
+  frameKindChoice = null;
+  frameResult = null;
   if (selectedCardContainer) selectedCardContainer.classList.add('hidden');
   
   // Reset toggles (Mode 2)
   statusToggles().forEach(btn => {
     btn.classList.remove('active');
     btn.dataset.selected = "false";
+    btn.setAttribute('aria-pressed', 'false');
   });
   judgmentProgress.textContent = '0 / 6';
   applyGuessBtn.disabled = true;
-  document.getElementById('frameResultChoices').innerHTML = '';
+  document.getElementById('frameDetails').classList.add('hidden');
+  document.getElementById('frameKindRow').classList.add('hidden');
+  document.getElementById('frameKind').innerHTML = '';
+  document.getElementById('frameResultNote').classList.add('hidden');
   document.getElementById('frameResultNote').textContent = '';
   
   // Reset numeric settings (0. 남은 횟수 설정)
