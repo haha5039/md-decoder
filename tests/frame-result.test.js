@@ -25,6 +25,47 @@ test('known clues and other judgments fill only a logically determined frame res
   assert.equal(getFrameResults([], guess).automatic, null);
 });
 
+test('a frame X for MiSolfachord Eliteia excludes all Pendulum questions on later guesses', () => {
+  const monsters = allCards.filter(card => !['spell', 'trap'].includes(card.frameType));
+  const first = monsters.find(card => card.nameEn === 'MiSolfachord Eliteia');
+  const remaining = filterCandidatesByHints(monsters, [{ type: 'guess', stat: 'frameType',
+    value: first.frameType, isCorrect: false }]);
+  assert.ok(remaining.length > 0);
+  assert.ok(remaining.every(card => !card.frameType.split('_').includes('effect')
+    && !card.frameType.split('_').includes('pendulum')));
+  for (const name of ['Clear Wing Synchro Dragon', 'Clear Wing Fast Dragon']) {
+    const next = monsters.find(card => card.nameEn === name);
+    const input = getFrameInput(remaining, next, { judgment: 'correct' });
+    assert.equal(input.showPendulum, false); assert.equal(input.showKinds, false);
+    assert.equal(input.result, 'synchro'); assert.equal(input.ready, true);
+    assert.equal(input.conflict, false);
+  }
+});
+
+test('a non-Pendulum frame X preserves questions about unrelated Pendulum frames', () => {
+  const cards = ['effect', 'effect_pendulum', 'fusion', 'fusion_pendulum'].map(frameType => ({ frameType }));
+  const remaining = filterCandidatesByHints(cards, [{ type: 'guess', stat: 'frameType', value: 'effect', isCorrect: false }]);
+  const input = getFrameInput(remaining, { frameType: 'fusion' }, { judgment: 'correct' });
+  assert.equal(input.showPendulum, true);
+  assert.deepEqual(input.frames, ['fusion_pendulum']);
+});
+
+test('other pending judgments can rule out Pendulum without an additional question', () => {
+  const guess = { frameType: 'effect', attribute: 'DARK' };
+  const cards = [{ frameType: 'effect', attribute: 'DARK' }, { frameType: 'effect_pendulum', attribute: 'LIGHT' }];
+  const input = getFrameInput(cards, guess, { judgment: 'correct',
+    otherJudgments: [{ type: 'guess', stat: 'attribute', value: 'DARK', isCorrect: true }] });
+  assert.equal(input.showPendulum, false); assert.equal(input.result, 'effect');
+  assert.equal(input.ready, true);
+});
+
+test('an explicit impossible Pendulum O stays visible for correction and blocks recording', () => {
+  const input = getFrameInput([{ frameType: 'synchro' }], { frameType: 'synchro_pendulum' },
+    { judgment: 'correct', pendulum: true, frame: 'synchro_pendulum' });
+  assert.equal(input.showPendulum, true); assert.equal(input.conflict, true);
+  assert.equal(input.ready, false);
+});
+
 test('all official Pendulum examples keep the target with progressive frame input', () => {
   for (const [guessName, targetName] of [
     ['The Unstoppable Exodia Incarnate', 'Supreme King Z-ARC'],

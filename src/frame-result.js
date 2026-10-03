@@ -15,15 +15,15 @@ export function getFrameResults(cards, guess, otherJudgments = []) {
   return { values, automatic: values.length === 1 ? values[0] : null, valid: candidates.length > 0 };
 }
 
-// Ordinary O/X stays unchanged. Ask about Pendulum only on the first frame
-// revelation; a non-Pendulum match determines the submitted card's base frame.
+// Ask about Pendulum only while a matching Pendulum frame remains possible.
+// Keep an explicit conflicting O editable until the user corrects the input.
 export function getFrameInput(cards, guess, {
   judgment = null, pendulum = false, frame = null, knownFrame = null, otherJudgments = []
 } = {}) {
   const eligible = getFrameResults(cards, guess, otherJudgments);
   const confirmed = knownFrame && knownFrame !== 'pendulum' ? knownFrame : null;
   const frames = eligible.values.filter(value => value !== 'wrong' && value.split('_').includes('pendulum'));
-  const showPendulum = judgment === 'correct' && !confirmed;
+  const showPendulum = judgment === 'correct' && !confirmed && (frames.length > 0 || pendulum);
   const showKinds = showPendulum && pendulum;
   let result = null;
   if (judgment === 'wrong') result = 'wrong';
