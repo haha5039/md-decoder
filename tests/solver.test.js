@@ -51,16 +51,42 @@ test('optimized metrics equal exhaustive reference including duplicates and Pend
     for (const key of Object.keys(expected)) close(score[key], expected[key]);
   }
   const group = result.snipes.find(score => score.card.id === 1);
-  close(group.oneShotProb, 3 / 5);
+  close(group.oneShotProb, 2 / 5);
 });
 
-test('cards outside target candidates can still be accepted answers; exclude submitted IDs', () => {
-  const cards = [card(1, { frameType: 'fusion' }), card(2, { frameType: 'synchro_pendulum' }), card(3, { frameType: 'fusion_pendulum' })];
+test('different IDs require identical full stats to be accepted; exclude submitted IDs', () => {
+  const cards = [card(1, { frameType: 'fusion' }), card(2, { frameType: 'synchro_pendulum' }),
+    card(3, { frameType: 'fusion_pendulum' }), card(4, { frameType: 'fusion' })];
   const result = createSolver(cards)({ candidateIds: [1, 2], guessedIds: [1] });
   assert.ok(!result.snipes.some(score => score.card.id === 1));
-  const bridge = result.snipes.find(score => score.card.id === 3);
-  close(bridge.oneShotProb, 1);
-  assert.equal(sortScores(result.snipes, 'oneShot')[0].card.id, 3);
+  const bridge = result.scouts.find(score => score.card.id === 3);
+  close(bridge.oneShotProb, 0); close(bridge.twoShotProb, 1);
+  const equivalent = result.snipes.find(score => score.card.id === 4);
+  close(equivalent.oneShotProb, 0.5);
+  assert.ok(result.snipes.every(score => score.card.frameType !== 'fusion_pendulum'));
+});
+
+test('revealed Synchro/Pendulum restricts accepted recommendations to full matching frames', () => {
+  const candidates = filterCandidatesByHints(allCards, [{ type: 'direct', stat: 'frameType',
+    value: 'synchro_pendulum', isCorrect: true }]);
+  const result = createSolver(allCards)({ candidateIds: candidates.map(card => card.id), revealedStats: ['frameType'], attempts: 2 });
+  assert.equal(candidates.length, 8);
+  assert.ok(result.snipes.length > 0);
+  assert.ok(result.snipes.every(score => score.card.frameType === 'synchro_pendulum'));
+  for (const name of ['Clear Wing Synchro Dragon', 'Chaos Emperor, the Dragon of Armageddon', 'Supreme King Z-ARC']) {
+    const scout = result.scouts.find(score => score.card.nameEn === name);
+    assert.ok(scout, name); close(scout.oneShotProb, 0);
+  }
+});
+
+test('six positive partial-frame results remain a failure branch requiring the correct full frame', () => {
+  const cards = ['synchro_pendulum', 'synchro', 'effect_pendulum', 'fusion_pendulum'].map((frameType, i) => card(i + 1, { frameType }));
+  const result = createSolver(cards)({ candidateIds: [1], attempts: 2 });
+  assert.deepEqual(result.snipes.map(score => score.card.id), [1]);
+  for (const scout of result.scouts) {
+    close(scout.oneShotProb, 0); close(scout.expectedRemaining, 1);
+    close(scout.twoShotProb, 1); close(scout.eliminationProb, 0);
+  }
 });
 
 test('all equivalent targets are a guaranteed win; empty and large states are explicit', () => {

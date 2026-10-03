@@ -170,6 +170,12 @@ export function getRevealedValue(card, stat) {
   return stat === 'level' ? getTargetRulesLevel(card) : card[stat];
 }
 
+// Partial frame/level matches reveal clues. An accepted answer must have the
+// same six revealed property values, even when a different card name is used.
+export function getAnswerKey(card) {
+  return JSON.stringify(STAT_KEYS.map(stat => getRevealedValue(card, stat)));
+}
+
 export function getGuessFeedback(guess, target) {
   const matches = Object.fromEntries(STAT_KEYS.map(stat => [stat,
     stat === 'frameType' ? isFrameMatch(target, guess.frameType) :
@@ -177,7 +183,7 @@ export function getGuessFeedback(guess, target) {
   ]));
   return {
     matches,
-    won: STAT_KEYS.every(stat => matches[stat]),
+    won: getAnswerKey(guess) === getAnswerKey(target),
     revealed: Object.fromEntries(STAT_KEYS.filter(stat => matches[stat]).map(stat => [stat, getRevealedValue(target, stat)]))
   };
 }

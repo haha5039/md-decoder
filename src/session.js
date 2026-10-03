@@ -1,4 +1,4 @@
-import { STAT_KEYS, getTargetRulesLevel, isFrameMatch } from './utils.js';
+import { STAT_KEYS, getTargetRulesLevel, isFrameMatch, getAnswerKey, getRevealedValue } from './utils.js';
 import { t } from './i18n.js';
 const SESSION_KEY = 'md-decoder-session-v1';
 let batchSequence = 0;
@@ -83,14 +83,29 @@ export function restoreSession(storage, cards) {
   } catch { return null; }
 }
 
-export function hasSolvedGuess(hints) {
+export function hasSolvedGuess(hints, cards = []) {
   const batches = new Map();
   for (const hint of hints) {
     if (hint.type !== 'guess') continue;
     if (!batches.has(hint.batchId)) batches.set(hint.batchId, new Map());
-    batches.get(hint.batchId).set(hint.stat, hint.isCorrect);
+    batches.get(hint.batchId).set(hint.stat, hint);
   }
-  return [...batches.values()].some(batch => STAT_KEYS.every(stat => batch.get(stat) === true));
+  return [...batches.values()].some(batch => {
+    if (!STAT_KEYS.every(stat => batch.get(stat)?.isCorrect === true)) return false;
+    const guess = cards.find(card => card.id === batch.get('frameType').cardId);
+    if (!guess) return false;
+    const revealed = stat => hints.find(hint => hint.type === 'direct' && hint.isCorrect && hint.stat === stat
+      && (stat !== 'frameType' || hint.value !== 'pendulum') && hint.batchId === batch.get(stat).batchId)
+      || hints.find(hint => hint.type === 'direct' && hint.isCorrect && hint.stat === stat
+        && (stat !== 'frameType' || hint.value !== 'pendulum'));
+    // Old O-only logs do not establish the target's full frame.
+    if (!revealed('frameType')) return false;
+    const target = Object.fromEntries(STAT_KEYS.map(stat => {
+      const direct = revealed(stat);
+      return [stat, direct ? direct.value : getRevealedValue(guess, stat)];
+    }));
+    return getAnswerKey(guess) === getAnswerKey(target);
+  });
 }
 
 export function nextChallenge(state) {

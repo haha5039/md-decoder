@@ -1,4 +1,4 @@
-import { STAT_KEYS, getValidLevels, getTargetRulesLevel, getRevealedValue } from './utils.js';
+import { STAT_KEYS, getValidLevels, getTargetRulesLevel, getRevealedValue, getAnswerKey } from './utils.js';
 
 // Cards are equiprobable targets. Merge identical behavior only, retaining card multiplicity.
 export const TWO_TURN_LIMIT = 60;
@@ -206,7 +206,7 @@ function addHintTiming(scores, targets, targetBits, planner, unknown, turns, opp
 export function createSolver(cards) {
   const frameCodes = new Map([...new Set(cards.map(card => card.frameType))].map((frame, index) => [frame, index + 1]));
   const records = cards.map(card => ({
-    card, key: signature(card), frameMask: mask(card),
+    card, key: signature(card), answerKey: getAnswerKey(card), frameMask: mask(card),
     frameCode: frameCodes.get(card.frameType),
     levelMask: getValidLevels(card).reduce((bits, level) => bits | (1 << level), 0),
     rulesLevel: getTargetRulesLevel(card)
@@ -257,7 +257,7 @@ export function createSolver(cards) {
       for (let j = 0; j < targets.length; j++) {
         const target = targets[j];
         const profile = matchMask(guess, target);
-        if (profile === 63) {
+        if (guess.answerKey === target.answerKey) {
           winning += target.weight;
           winningTargets.push(j);
           if (twoTurnExact) winBits |= targetBits[j];
@@ -382,7 +382,7 @@ export function createSolver(cards) {
     for (const { group, branches, branchProfiles, winBits, actionKey, hintActionKey, winning, winningTargets, ...score } of scores) {
       for (const { card } of group) {
         const item = { card, profileKey: group[0].key, equivalentChoices: group.length, ...score };
-        // A card outside the candidate set may still win via partial-frame matching.
+        // Different card IDs may be accepted only when all six exact values agree.
         (score.oneShotProb > 0 ? snipes : scouts).push(item);
       }
     }

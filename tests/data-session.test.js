@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { isCardDecoderEligible, mergeMasterDuelCards, normalizeCards, validateCards } from '../src/data.js';
 import { applyAutomaticMatches, budget, consumeAttempt, createBatchId, initialHintAvailable, recordDirectHints, nextChallenge, parseStatInput, removeInputBatch, restoreSession, saveSession, hasSolvedGuess } from '../src/session.js';
-import { escapeHTML } from '../src/utils.js';
+import { escapeHTML, getGuessFeedback, hintsFromFeedback } from '../src/utils.js';
 import { ATTRIBUTE_ORDER, FRAME_ORDER, RACE_ORDER, localizeCardName, setLocale, t } from '../src/i18n.js';
 
 const api = { id: 1, name: 'Card', type: 'Effect Monster', frameType: 'effect', attribute: 'DARK', level: 0, race: 'Dragon', atk: -1, def: 0 };
@@ -216,10 +216,25 @@ test('card names and attributes cannot inject HTML', () => {
 });
 
 test('a complete correct submission ends the challenge; partial rows do not', () => {
-  const hints = ['frameType', 'level', 'attribute', 'race', 'atk', 'def'].map(stat => ({ type: 'guess', stat, isCorrect: true, batchId: 'g' }));
-  assert.equal(hasSolvedGuess(hints), true);
-  assert.equal(hasSolvedGuess(hints.slice(0, 5)), false);
-  assert.equal(hasSolvedGuess(hints.map(hint => ({ ...hint, isCorrect: hint.stat !== 'atk' }))), false);
+  const hints = hintsFromFeedback(api, getGuessFeedback(api, api), 'g');
+  assert.equal(hasSolvedGuess(hints, [api]), true);
+  assert.equal(hasSolvedGuess(hints.filter(hint => hint.stat !== 'def'), [api]), false);
+  assert.equal(hasSolvedGuess(hints.map(hint => ({ ...hint, isCorrect: hint.stat !== 'atk' })), [api]), false);
+});
+
+test('all-O partial frame results do not end the challenge, including restored sessions', () => {
+  const target = { ...api, frameType: 'synchro_pendulum' };
+  const guess = { ...api, frameType: 'synchro' };
+  const hints = hintsFromFeedback(guess, getGuessFeedback(guess, target), 'g');
+  assert.ok(hints.filter(hint => hint.type === 'guess').every(hint => hint.isCorrect));
+  assert.equal(hasSolvedGuess(hints, [guess]), false);
+  const values = new Map();
+  const storage = { setItem: (key, value) => values.set(key, value), getItem: key => values.get(key) };
+  saveSession(storage, { hints, attempts: 3, remainingHints: 1, problems: 1 });
+  const restored = restoreSession(storage, [guess]);
+  assert.equal(hasSolvedGuess(restored.hints, [guess]), false);
+  assert.equal(restored.attempts, 3); assert.equal(restored.remainingHints, 1);
+  assert.equal(hasSolvedGuess(hints.filter(hint => hint.type !== 'direct'), [guess]), false);
 });
 
 test('session restore removes unsafe inferred values from older versions', () => {

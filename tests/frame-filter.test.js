@@ -44,6 +44,20 @@ test('guess feedback still matches either part of a Pendulum frame', () => {
   assert.deepEqual(filterCandidatesByHints(cards, [{ ...guess, isCorrect: false }]), cards.slice(3));
 });
 
+test('partial frame matches reveal the full frame but do not make a different frame an accepted answer', () => {
+  const target = { id: 1, frameType: 'synchro_pendulum', attribute: 'DARK', level: 8, race: 'Dragon', atk: 3000, def: 2500 };
+  for (const frameType of ['synchro', 'effect_pendulum', 'fusion_pendulum']) {
+    const guess = { ...target, id: 2, frameType };
+    const feedback = getGuessFeedback(guess, target);
+    assert.ok(Object.values(feedback.matches).every(Boolean));
+    assert.equal(feedback.revealed.frameType, 'synchro_pendulum');
+    assert.equal(feedback.won, false);
+    assert.deepEqual(filterCandidatesByHints([guess, target], hintsFromFeedback(guess, feedback, 'g')), [target]);
+    assert.equal(getGuessFeedback(target, guess).won, false);
+  }
+  assert.equal(getGuessFeedback({ ...target, id: 3, name: 'Equivalent card' }, target).won, true);
+});
+
 test('database update preserves API frames and the same event count', () => {
   const updated = monsters.map(card => ({ ...card, frameType: mapFrameType(card.type, card.frameType) }));
   assert.equal(filterCandidatesByHints(updated, [revealedEffect]).length, 5796);

@@ -884,7 +884,7 @@ function hydrateSolverResult(result) {
 }
 
 function calculateRecommendations() {
-  if (!candidates.length || hasSolvedGuess(hints)) return;
+  if (!candidates.length || hasSolvedGuess(hints, allCards)) return;
   manualCriteria = false;
   updateHintStrategy(true);
   cancelCalculation();
@@ -958,7 +958,7 @@ function updateHintStrategy(autoSelect = false) {
     : t('dynamic.autoCriteriaReason', { attempts, problems, criterion: t(`criteria.${activeCriteria}`), count: Math.min(4, currentBudget) });
   const messages = [];
   let hintAdviceHTML = '';
-  if (hasSolvedGuess(hints) && candidates.length) {
+  if (hasSolvedGuess(hints, allCards) && candidates.length) {
     calcRecBtn.disabled = true;
     strategyMsg.textContent = t('dynamic.solved');
     return;
