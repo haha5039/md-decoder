@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "test": "node --test",
+    "test:data": "node --test tests/card-data.test.js",
     "evaluate": "node evaluate_algorithm.js",
     "compare": "node simulate_compare.js",
     "data:update": "node merge_data.js",

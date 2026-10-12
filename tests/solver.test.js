@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { allocateAttempts, chooseCriteria, createSolver, distinctScores, recommendHintUse, sortScores } from '../src/solver.js';
 import { getGuessFeedback, getValidLevels, getTargetRulesLevel, filterCandidatesByHints, hintsFromFeedback, STAT_KEYS } from '../src/utils.js';
-import { allCards } from '../src/cards_data.js';
+import { ruleCards } from './fixtures/cards.js';
 
 const card = (id, extra = {}) => ({ id, name: `Card ${id}`, frameType: 'effect', level: 4, attribute: 'DARK', race: 'Dragon', atk: 1000, def: 1000, ...extra });
 const close = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-10, `${actual} != ${expected}`);
@@ -67,10 +67,12 @@ test('different IDs require identical full stats to be accepted; exclude submitt
 });
 
 test('revealed Synchro/Pendulum restricts accepted recommendations to full matching frames', () => {
-  const candidates = filterCandidatesByHints(allCards, [{ type: 'direct', stat: 'frameType',
+  const cards = [...ruleCards, card(1001, { frameType: 'synchro_pendulum', level: 10 })];
+  const candidates = filterCandidatesByHints(cards, [{ type: 'direct', stat: 'frameType',
     value: 'synchro_pendulum', isCorrect: true }]);
-  const result = createSolver(allCards)({ candidateIds: candidates.map(card => card.id), revealedStats: ['frameType'], attempts: 2 });
-  assert.equal(candidates.length, 8);
+  const result = createSolver(cards)({ candidateIds: candidates.map(card => card.id), revealedStats: ['frameType'], attempts: 2 });
+  assert.deepEqual(new Set(candidates.map(card => card.id)), new Set([90036274, 1001]));
+  assert.deepEqual(new Set(result.snipes.map(score => score.card.id)), new Set([90036274, 1001]));
   assert.ok(result.snipes.length > 0);
   assert.ok(result.snipes.every(score => score.card.frameType === 'synchro_pendulum'));
   for (const name of ['Clear Wing Synchro Dragon', 'Chaos Emperor, the Dragon of Armageddon', 'Supreme King Z-ARC']) {
@@ -191,10 +193,15 @@ test('routine early-game narrowing does not spend a scarce daily hint', () => {
     hint: early, bestGuessExpectedRemaining: 500, guessedCount: 1 }).reason, 'scarceResource');
 });
 
-test('observed effect and fusion starts conserve one hint until the first judgment', () => {
-  const solve = createSolver(allCards);
+test('fixed large effect and fusion starts conserve one hint until the first judgment', () => {
+  const cards = ['effect', 'fusion'].flatMap((frameType, frameIndex) =>
+    Array.from({ length: 64 }, (_, index) => card(1000 + frameIndex * 100 + index, {
+      frameType, level: index % 12 + 1, atk: index * 100, def: (index % 7) * 200,
+      attribute: ['DARK', 'LIGHT', 'EARTH', 'WATER'][index % 4], race: ['Dragon', 'Warrior', 'Machine'][index % 3]
+    })));
+  const solve = createSolver(cards);
   for (const frame of ['effect', 'fusion']) {
-    const candidates = filterCandidatesByHints(allCards, [{ type: 'direct', stat: 'frameType', value: frame, isCorrect: true }]);
+    const candidates = filterCandidatesByHints(cards, [{ type: 'direct', stat: 'frameType', value: frame, isCorrect: true }]);
     const result = solve({ candidateIds: candidates.map(item => item.id), revealedStats: ['frameType'], attempts: 4 });
     const advice = recommendHintUse({ attempts: 4, remainingHints: 1, problemsLeft: 1,
       candidateCount: candidates.length, hint: result.hint, bestGuessExpectedRemaining: result.bestGuessExpectedRemaining });
@@ -273,27 +280,24 @@ test('a substantial measured success gain can justify a hint before the first ju
 });
 
 test('known rules exceptions use correct identities and retain printed zero', () => {
-  const alchemic = allCards.find(card => card.id === 65301952);
+  const alchemic = ruleCards.find(card => card.id === 65301952);
   assert.equal(getTargetRulesLevel(alchemic), 4);
   assert.deepEqual(getValidLevels(alchemic), [4]);
   for (const id of [65305468, 43490025, 26973555, 41522092, 52653092]) {
-    const target = allCards.find(card => card.id === id);
+    const target = ruleCards.find(card => card.id === id);
     assert.deepEqual(getValidLevels(target), [0, 1]); assert.equal(getTargetRulesLevel(target), 1);
   }
-  const tzolkin = allCards.find(card => card.id === 1686814);
-  const future = allCards.find(card => card.id === 65305468);
+  const tzolkin = ruleCards.find(card => card.id === 1686814);
+  const future = ruleCards.find(card => card.id === 65305468);
   const feedback = getGuessFeedback(future, tzolkin);
   assert.equal(feedback.matches.level, true); assert.equal(feedback.revealed.level, 12);
   assert.ok(filterCandidatesByHints([tzolkin, future], hintsFromFeedback(future, feedback, 'guess')).includes(tzolkin));
 });
 
-test('feedback replay always keeps the true target; hints expose only matched properties', () => {
-  const cards = allCards.filter(card => !['spell', 'trap'].includes(card.frameType));
-  for (let i = 0; i < 30; i++) {
-    const target = cards[(i * 307) % cards.length];
-    const guess = cards[(i * 521 + 17) % cards.length];
+test('feedback replay keeps every rule-example target for every rule-example guess', () => {
+  for (const target of ruleCards) for (const guess of ruleCards) {
     const feedback = getGuessFeedback(guess, target);
     for (const stat of Object.keys(feedback.revealed)) assert.equal(feedback.matches[stat], true);
-    assert.ok(filterCandidatesByHints(cards, hintsFromFeedback(guess, feedback, 'guess')).some(card => card.id === target.id));
+    assert.ok(filterCandidatesByHints(ruleCards, hintsFromFeedback(guess, feedback, 'guess')).some(card => card.id === target.id));
   }
 });

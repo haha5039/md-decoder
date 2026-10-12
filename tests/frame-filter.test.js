@@ -1,28 +1,29 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { allCards } from '../src/cards_data.js';
+import { makeCard, ruleCards } from './fixtures/cards.js';
 import { filterCandidatesByHints, getGuessFeedback, hintsFromFeedback, mapFrameType } from '../src/utils.js';
 import { applyAutomaticMatches } from '../src/session.js';
 
-const monsters = allCards.filter(card => !['spell', 'trap'].includes(card.frameType));
 const revealedEffect = { type: 'direct', stat: 'frameType', value: 'effect', isCorrect: true };
 
-test('Master Duel source contains 5796 effect monsters', () => {
-  assert.equal(monsters.length, 9058);
-  const candidates = filterCandidatesByHints(monsters, [revealedEffect]);
-  assert.equal(candidates.length, 5796);
-  assert.ok(candidates.every(card => card.frameType === 'effect'));
+test('an exact effect hint retains all pure effect cards and excludes compound frames', () => {
+  const cards = [makeCard(1), makeCard(2, { frameType: 'effect_pendulum' }),
+    makeCard(3, { attribute: 'EARTH', race: 'Beast-Warrior' }), makeCard(4, { frameType: 'normal' })];
+  assert.deepEqual(filterCandidatesByHints(cards, [revealedEffect]).map(card => card.id), [1, 3]);
+  const expanded = [...cards, makeCard(5, { attribute: 'EARTH' }), makeCard(6, { frameType: 'fusion' })];
+  assert.deepEqual(filterCandidatesByHints(expanded, [revealedEffect]).map(card => card.id), [1, 3, 5]);
 });
 
-test('Master Duel source includes observed live cards and a sane race distribution', () => {
-  assert.equal(monsters.filter(card => card.race === 'Beast-Warrior').length, 261);
-  assert.equal(monsters.filter(card => card.attribute === 'EARTH').length, 2047);
-  assert.equal(monsters.find(card => card.nameEn === 'Gladiator Beast Dareios')?.attribute, 'EARTH');
-  assert.ok(monsters.some(card => card.id === 14556954));
-  assert.ok(monsters.some(card => card.id === 68059897));
-  assert.equal(monsters.filter(card => card.nameEn === 'Black Luster Soldier').length, 2);
-  assert.deepEqual(new Set(monsters.filter(card => card.nameEn === 'Black Luster Soldier').map(card => card.frameType)), new Set(['normal', 'ritual']));
-  assert.ok(!monsters.some(card => card.nameEn?.startsWith('Power Pro')));
+test('race and attribute clues select their intersection as new cards are added', () => {
+  const cards = [makeCard(1, { race: 'Beast-Warrior', attribute: 'EARTH' }),
+    makeCard(2, { race: 'Beast-Warrior' }), makeCard(3, { attribute: 'EARTH' }), makeCard(4)];
+  const race = { type: 'direct', stat: 'race', value: 'Beast-Warrior', isCorrect: true };
+  const attribute = { type: 'direct', stat: 'attribute', value: 'EARTH', isCorrect: true };
+  assert.deepEqual(filterCandidatesByHints(cards, [race]).map(card => card.id), [1, 2]);
+  assert.deepEqual(filterCandidatesByHints(cards, [attribute]).map(card => card.id), [1, 3]);
+  assert.deepEqual(filterCandidatesByHints(cards, [race, attribute]).map(card => card.id), [1]);
+  const expanded = [...cards, makeCard(5, { race: 'Beast-Warrior', attribute: 'EARTH' })];
+  assert.deepEqual(filterCandidatesByHints(expanded, [race, attribute]).map(card => card.id), [1, 5]);
 });
 
 test('revealed compound frames are exact, even with the old partial-input flag', () => {
@@ -58,9 +59,12 @@ test('partial frame matches reveal the full frame but do not make a different fr
   assert.equal(getGuessFeedback({ ...target, id: 3, name: 'Equivalent card' }, target).won, true);
 });
 
-test('database update preserves API frames and the same event count', () => {
-  const updated = monsters.map(card => ({ ...card, frameType: mapFrameType(card.type, card.frameType) }));
-  assert.equal(filterCandidatesByHints(updated, [revealedEffect]).length, 5796);
+test('API frame normalization preserves each authoritative frame and exact filtering', () => {
+  const cards = [makeCard(1, { type: 'Normal Tuner Monster', frameType: 'normal' }),
+    makeCard(2, { type: 'Effect Monster', frameType: 'effect_pendulum' }), makeCard(3)];
+  const updated = cards.map(card => ({ ...card, frameType: mapFrameType(card.type, card.frameType) }));
+  assert.deepEqual(updated.map(card => [card.id, card.frameType]), [[1, 'normal'], [2, 'effect_pendulum'], [3, 'effect']]);
+  assert.deepEqual(filterCandidatesByHints(updated, [revealedEffect]).map(card => card.id), [3]);
   assert.equal(mapFrameType('Normal Tuner Monster', 'normal'), 'normal');
   assert.equal(mapFrameType('Pendulum Tuner Effect Monster', 'normal_pendulum'), 'normal_pendulum');
   assert.equal(mapFrameType('Spirit Monster', 'effect_pendulum'), 'effect_pendulum');
@@ -68,8 +72,14 @@ test('database update preserves API frames and the same event count', () => {
   assert.equal(mapFrameType('Pendulum Effect Fusion Monster'), 'fusion_pendulum');
 });
 
-test('R-Genex Turing O/X input matches the observed in-game count', () => {
-  const guess = monsters.find(card => card.nameEn === 'R-Genex Turing');
+test('R-Genex Turing O/X input retains matching targets and rejects each conflicting stat', () => {
+  const guess = ruleCards.find(card => card.nameEn === 'R-Genex Turing');
+  const target = { ...guess, id: 101, attribute: 'EARTH', race: 'Machine', def: 400 };
+  const cards = [guess, target, { ...target, id: 102, race: 'Warrior' },
+    ...[
+      { frameType: 'normal' }, { frameType: 'effect_pendulum' }, { level: 3 },
+      { attribute: 'DARK' }, { race: 'Spellcaster' }, { atk: 700 }, { def: 600 }
+    ].map((extra, index) => ({ ...target, id: 200 + index, ...extra }))];
   const results = {
     frameType: true,
     level: true,
@@ -87,14 +97,14 @@ test('R-Genex Turing O/X input matches the observed in-game count', () => {
     batchId: 'r-genex-turing'
   }));
   const hints = applyAutomaticMatches(batch, [guess], { revealedFrames: { 'r-genex-turing': 'effect' } });
-  assert.ok(filterCandidatesByHints(monsters, hints).length >= 18);
+  assert.deepEqual(filterCandidatesByHints(cards, hints).map(card => card.id), [101, 102]);
 });
 
 test('revealed Pendulum frame keeps the official Z-ARC example target', () => {
-  const guess = monsters.find(card => card.nameEn === 'The Unstoppable Exodia Incarnate');
-  const target = monsters.find(card => card.nameEn === 'Supreme King Z-ARC');
+  const guess = ruleCards.find(card => card.nameEn === 'The Unstoppable Exodia Incarnate');
+  const target = ruleCards.find(card => card.nameEn === 'Supreme King Z-ARC');
   const feedback = getGuessFeedback(guess, target);
   assert.equal(feedback.matches.frameType, true);
   assert.equal(feedback.revealed.frameType, 'fusion_pendulum');
-  assert.ok(filterCandidatesByHints(monsters, hintsFromFeedback(guess, feedback, 'zarc')).some(card => card.id === target.id));
+  assert.ok(filterCandidatesByHints(ruleCards, hintsFromFeedback(guess, feedback, 'zarc')).some(card => card.id === target.id));
 });

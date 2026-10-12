@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { getFrameInput, getFrameResults } from '../src/frame-result.js';
-import { allCards } from '../src/cards_data.js';
+import { ruleCards } from './fixtures/cards.js';
 import { applyAutomaticMatches, removeInputBatch } from '../src/session.js';
 import { filterCandidatesByHints, getGuessFeedback, hintsFromFeedback } from '../src/utils.js';
 
@@ -26,7 +26,7 @@ test('known clues and other judgments fill only a logically determined frame res
 });
 
 test('a frame X for MiSolfachord Eliteia excludes all Pendulum questions on later guesses', () => {
-  const monsters = allCards.filter(card => !['spell', 'trap'].includes(card.frameType));
+  const monsters = ruleCards;
   const first = monsters.find(card => card.nameEn === 'MiSolfachord Eliteia');
   const remaining = filterCandidatesByHints(monsters, [{ type: 'guess', stat: 'frameType',
     value: first.frameType, isCorrect: false }]);
@@ -81,17 +81,17 @@ test('all official Pendulum examples keep the target with progressive frame inpu
     ['Clear Wing Fast Dragon', 'Supreme King Z-ARC'],
     ['Supreme King Z-ARC', 'The Unstoppable Exodia Incarnate']
   ]) {
-    const guess = allCards.find(card => card.nameEn === guessName);
-    const target = allCards.find(card => card.nameEn === targetName);
+    const guess = ruleCards.find(card => card.nameEn === guessName);
+    const target = ruleCards.find(card => card.nameEn === targetName);
     const feedback = getGuessFeedback(guess, target);
-    const input = getFrameInput(allCards, guess, { judgment: 'correct',
+    const input = getFrameInput(ruleCards, guess, { judgment: 'correct',
       pendulum: target.frameType.includes('_pendulum'), frame: target.frameType.includes('_pendulum') ? target.frameType : null });
     assert.equal(input.ready, true);
     assert.equal(input.result, target.frameType);
     const batch = hintsFromFeedback(guess, feedback, 'g').filter(hint => hint.type === 'guess');
     batch[0].attemptCost = 1;
     const hints = applyAutomaticMatches(batch, [guess], { revealedFrames: { g: input.result } });
-    assert.ok(filterCandidatesByHints(allCards, hints).some(card => card.id === target.id));
+    assert.ok(filterCandidatesByHints(ruleCards, hints).some(card => card.id === target.id));
     assert.equal(hints.find(hint => hint.type === 'direct' && hint.stat === 'frameType').value, target.frameType);
     assert.equal(removeInputBatch(hints, 'g').hintsRefund, 0);
     assert.equal(removeInputBatch(hints, 'g').attemptsRefund, 1);
