@@ -11,6 +11,22 @@ node_modules
 dist
 dist-ssr
 *.local
+# Private instructions, environment settings, and local verification evidence
+/AGENTS.md
+.local/
+.env
+.env.*
+!.env.example
+diagnostics/
+device-verification/
+adb-logs/
+crash-reports/
+screenshots/
+*.keystore
+*.jks
+*.p12
+*.pfx
+*.key
 public/master_duel_manifest.json.tmp
 src/cards_data.js.tmp
 
